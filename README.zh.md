@@ -104,3 +104,9 @@ dsh-web-launcher/
 - **3080 端口被其他程序占用** —— 只有响应包含 `__DSH_BOOT__` 标记时才会判定为"已有 dsh 服务"；否则启动失败并在日志中体现端口冲突。
 - **一台机器多个 harness 仓库** —— 每个仓库各运行一次 `install.ps1`；快捷方式名称固定，装第二个前先重命名已有快捷方式。
 - **托盘图标被收纳** —— 从任务栏"显示隐藏的图标"中拖出即可。
+
+## 许可
+
+MIT 许可，见 [LICENSE](LICENSE)。
+
+本启动器是 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)（MIT 许可）的辅助工具，未内置或复制任何 harness 代码：它只是在你本地的 harness 仓库上启动服务，并在生成图标时读取该仓库的 `apps/web/public/favicon.svg`。harness 仓库是独立项目，其本身及第三方依赖的许可条款以该仓库内的 LICENSE 与 THIRD_PARTY_NOTICES.md 为准。

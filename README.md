@@ -106,3 +106,9 @@ dsh-web-launcher/
 - **Port 3080 is occupied by another app** — the launcher treats a ready-but-not-dsh service as "already running" only when the response contains the `__DSH_BOOT__` marker; otherwise start-up fails and the log shows the port conflict.
 - **Multiple checkouts on one machine** — run `install.ps1` per checkout; rename the first shortcut before installing the next one, since the shortcut name is fixed.
 - **Tray icon is hidden** — drag it out of the taskbar overflow area ("Show hidden icons").
+
+## License
+
+MIT — see [LICENSE](LICENSE).
+
+This launcher is an auxiliary tool for [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) (MIT licensed) and does not vendor or copy any harness code. It only starts the harness binaries from your local checkout and reads the checkout's `apps/web/public/favicon.svg` when the icon is regenerated. The harness checkout itself is a separate repository governed by its own license; see the harness repository's LICENSE and THIRD_PARTY_NOTICES.md for the terms of the harness and its dependencies.
