@@ -1,69 +1,65 @@
-﻿{
-    "name":  "dsh-desktop",
-    "version":  "2.0.0",
-    "description":  "DeepSeek Harness Desktop - Electron client with multi-tab, extensions, and auto-update",
-    "author":  "KK-Irving",
-    "license":  "MIT",
-    "main":  "src/main/index.js",
-    "scripts":  {
-                    "start":  "electron .",
-                    "dev":  "electron . --dev",
-                    "build":  "electron-builder",
-                    "build:win":  "electron-builder --win",
-                    "build:portable":  "electron-builder --win portable",
-                    "pack":  "electron-builder --dir"
-                },
-    "dependencies":  {
-                         "electron-store":  "^8.1.0",
-                         "electron-updater":  "^6.3.0"
-                     },
-    "devDependencies":  {
-                            "electron":  "^33.0.0",
-                            "electron-builder":  "^25.1.0"
-                        },
-    "build":  {
-                  "appId":  "com.deepseek.harness.desktop",
-                  "productName":  "DeepSeek Harness",
-                  "directories":  {
-                                      "output":  "dist"
-                                  },
-                  "files":  [
-                                "src/**/*"
-                            ],
-                  "extraResources":  [
-                                         {
-                                             "from":  "../dsh-web.ico",
-                                             "to":  "."
-                                         }
-                                     ],
-                  "win":  {
-                              "icon":  "../dsh-web.ico",
-                              "target":  [
-                                             {
-                                                 "target":  "nsis",
-                                                 "arch":  [
-                                                              "x64"
-                                                          ]
-                                             },
-                                             {
-                                                 "target":  "portable",
-                                                 "arch":  [
-                                                              "x64"
-                                                          ]
-                                             }
-                                         ]
-                          },
-                  "nsis":  {
-                               "oneClick":  false,
-                               "allowToChangeInstallationDirectory":  true,
-                               "createDesktopShortcut":  true,
-                               "createStartMenuShortcut":  true,
-                               "shortcutName":  "DeepSeek Harness"
-                           },
-                  "publish":  {
-                                  "provider":  "github",
-                                  "owner":  "KK-Irving",
-                                  "repo":  "dsh-web-launcher"
-                              }
-              }
+{
+  "name": "dsh-desktop",
+  "version": "2.0.0",
+  "description": "DeepSeek Harness Desktop - Electron client with multi-tab, extensions, and auto-update",
+  "author": "KK-Irving",
+  "license": "MIT",
+  "main": "src/main/index.js",
+  "scripts": {
+    "start": "electron .",
+    "dev": "electron . --dev",
+    "build": "electron-builder",
+    "build:win": "electron-builder --win",
+    "build:portable": "electron-builder --win portable",
+    "pack": "electron-builder --dir"
+  },
+  "dependencies": {
+    "electron-store": "^8.1.0",
+    "electron-updater": "^6.3.0"
+  },
+  "devDependencies": {
+    "electron": "^33.0.0",
+    "electron-builder": "^25.1.0"
+  },
+  "build": {
+    "appId": "com.deepseek.harness.desktop",
+    "productName": "DeepSeek Harness",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "src/**/*"
+    ],
+    "extraResources": [
+      {
+        "from": "../dsh-web.ico",
+        "to": "."
+      }
+    ],
+    "win": {
+      "icon": "../dsh-web.ico",
+      "target": [
+        {
+          "target": "nsis",
+          "arch": ["x64"]
+        },
+        {
+          "target": "portable",
+          "arch": ["x64"]
+        }
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "DeepSeek Harness"
+    },
+    "publish": {
+      "provider": "github",
+      "owner": "KK-Irving",
+      "repo": "dsh-web-launcher"
+    }
+  }
 }

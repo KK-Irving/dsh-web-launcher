@@ -1,4 +1,4 @@
-﻿/**
+/**
  * DSH Desktop - Electron Main Process
  *
  * Full-featured desktop client for DeepSeek Harness Web UI:
@@ -607,6 +607,7 @@ function updateTrayMenu() {
     { label: t('trayNewTab'), click: () => { showWindow(); createTab() } },
     { label: t('trayRestartBackend'), click: () => restartBackend() },
     { label: t.lang === 'zh' ? '检查 Harness 更新' : 'Check Harness Update', click: () => checkAndPromptHarnessUpdate() },
+    { label: t.lang === 'zh' ? '检查客户端更新' : 'Check Launcher Update', click: () => checkAndPromptLauncherUpdate() },
     { type: 'separator' },
     { label: `${t('trayExtensions')} (${extensionCount})`, click: () => showExtensionManager() },
     { label: t('traySettings'), click: () => showSettings() },
@@ -652,6 +653,134 @@ async function restartBackend() {
   }
 }
 
+// ── Launcher Self-Update ─────────────────────────────────────────────────────
+
+/**
+ * Check if the launcher repo (dsh-web-launcher) has upstream updates.
+ */
+async function checkLauncherUpdate() {
+  const launcherDir = path.resolve(__dirname, '..', '..', '..')
+  const gitDir = path.join(launcherDir, '.git')
+  if (!fs.existsSync(gitDir)) return { hasUpdate: false, error: 'Launcher directory is not a git repo' }
+
+  const { execFile } = require('child_process')
+  const { promisify } = require('util')
+  const execAsync = promisify(execFile)
+  const gitOpts = { cwd: launcherDir, windowsHide: true, shell: process.platform === 'win32' }
+
+  try {
+    await execAsync('git', ['fetch', '--quiet'], gitOpts)
+    const { stdout: branch } = await execAsync('git', ['rev-parse', '--abbrev-ref', 'HEAD'], gitOpts)
+    const { stdout: local } = await execAsync('git', ['rev-parse', 'HEAD'], gitOpts)
+    const { stdout: remote } = await execAsync('git', ['rev-parse', `origin/${branch.trim()}`], gitOpts)
+
+    const currentHead = local.trim().slice(0, 10)
+    const remoteHead = remote.trim().slice(0, 10)
+    const hasUpdate = currentHead !== remoteHead
+
+    let behind = 0
+    if (hasUpdate) {
+      const { stdout: count } = await execAsync('git', ['rev-list', '--count', `HEAD..origin/${branch.trim()}`], gitOpts)
+      behind = parseInt(count.trim(), 10) || 0
+    }
+
+    return { hasUpdate, currentHead, remoteHead, branch: branch.trim(), behind, launcherDir }
+  } catch (err) {
+    return { hasUpdate: false, error: err.message }
+  }
+}
+
+/**
+ * Pull latest launcher code + reinstall electron deps.
+ * After update, app needs restart to use new code.
+ */
+async function updateLauncher() {
+  const launcherDir = path.resolve(__dirname, '..', '..', '..')
+  const electronDir = path.join(launcherDir, 'electron')
+
+  const { execFile } = require('child_process')
+  const { promisify } = require('util')
+  const execAsync = promisify(execFile)
+  const isWin = process.platform === 'win32'
+  const shellOpts = { cwd: launcherDir, windowsHide: true, shell: isWin, maxBuffer: 8 * 1024 * 1024 }
+
+  const steps = []
+  try {
+    const pull = await execAsync('git', ['pull', '--ff-only'], { cwd: launcherDir, windowsHide: true, shell: isWin })
+    steps.push(`$ git pull --ff-only\n${(pull.stdout + pull.stderr).trim()}`)
+
+    const install = await execAsync('pnpm', ['install'], { cwd: electronDir, windowsHide: true, shell: isWin, maxBuffer: 8 * 1024 * 1024 })
+    steps.push(`$ pnpm install (electron/)\n${(install.stdout + install.stderr).trim().slice(0, 2000)}`)
+
+    return { ok: true, output: steps.join('\n\n'), needRestart: true }
+  } catch (err) {
+    steps.push(`ERROR: ${((err.stdout || '') + (err.stderr || '') + (err.message || '')).slice(0, 2000)}`)
+    return { ok: false, output: steps.join('\n\n'), error: err.message }
+  }
+}
+
+async function checkAndPromptLauncherUpdate() {
+  const zhMode = t.lang === 'zh'
+  const result = await checkLauncherUpdate()
+
+  if (result.error) {
+    dialog.showErrorBox(
+      zhMode ? '检查客户端更新失败' : 'Launcher Update Check Failed',
+      result.error
+    )
+    return
+  }
+
+  if (!result.hasUpdate) {
+    dialog.showMessageBox(mainWindow || undefined, {
+      type: 'info',
+      title: zhMode ? '客户端已是最新' : 'Launcher Up to Date',
+      message: zhMode
+        ? `当前客户端代码已是最新版本（${result.currentHead}）。`
+        : `Launcher code is up to date (${result.currentHead}).`
+    })
+    return
+  }
+
+  const { response } = await dialog.showMessageBox(mainWindow || undefined, {
+    type: 'question',
+    title: zhMode ? '发现客户端更新' : 'Launcher Update Available',
+    message: zhMode
+      ? `客户端仓库有 ${result.behind} 个新提交。\n当前：${result.currentHead}\n远程：${result.remoteHead}\n\n是否立即更新？（git pull + pnpm install）\n更新后需重启客户端生效。`
+      : `Launcher repo has ${result.behind} new commit(s).\nLocal: ${result.currentHead}\nRemote: ${result.remoteHead}\n\nUpdate now? (git pull + pnpm install)\nApp restart required after update.`,
+    buttons: [zhMode ? '立即更新' : 'Update Now', zhMode ? '稍后' : 'Later'],
+    defaultId: 0
+  })
+
+  if (response !== 0) return
+
+  if (tray) tray.setToolTip(zhMode ? 'DeepSeek Harness (正在更新客户端...)' : 'DeepSeek Harness (updating launcher...)')
+  const updateResult = await updateLauncher()
+
+  if (updateResult.ok) {
+    const { response: restartResponse } = await dialog.showMessageBox(mainWindow || undefined, {
+      type: 'info',
+      title: zhMode ? '客户端更新完成' : 'Launcher Updated',
+      message: zhMode
+        ? '客户端代码已更新。需要重启应用才能生效。\n是否立即重启？'
+        : 'Launcher code updated. Restart required to apply changes.\nRestart now?',
+      detail: updateResult.output.slice(0, 2000),
+      buttons: [zhMode ? '立即重启' : 'Restart Now', zhMode ? '稍后' : 'Later'],
+      defaultId: 0
+    })
+    if (restartResponse === 0) {
+      app.relaunch()
+      isQuitting = true
+      app.quit()
+    }
+  } else {
+    dialog.showErrorBox(
+      zhMode ? '客户端更新失败' : 'Launcher Update Failed',
+      (updateResult.output || updateResult.error).slice(0, 2000)
+    )
+  }
+  updateTrayMenu()
+}
 // ── Harness Update ───────────────────────────────────────────────────────────
 
 /**
@@ -927,6 +1056,8 @@ function registerTabIpc() {
   // Harness update
   ipcMain.handle('check-harness-update', async () => await checkHarnessUpdate())
   ipcMain.handle('update-harness', async () => await updateHarness())
+  ipcMain.handle('check-launcher-update', async () => await checkLauncherUpdate())
+  ipcMain.handle('update-launcher', async () => await updateLauncher())
 }
 
 // ── App Lifecycle ────────────────────────────────────────────────────────────

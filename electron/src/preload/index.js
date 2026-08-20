@@ -49,4 +49,8 @@ contextBridge.exposeInMainWorld('dshDesktop', {
   // ── Harness Update ─────────────────────────────────────────────────────────
   checkHarnessUpdate: () => ipcRenderer.invoke('check-harness-update'),
   updateHarness: () => ipcRenderer.invoke('update-harness'),
+
+  // ── Launcher Self-Update ───────────────────────────────────────────────────
+  checkLauncherUpdate: () => ipcRenderer.invoke('check-launcher-update'),
+  updateLauncher: () => ipcRenderer.invoke('update-launcher'),
 })
