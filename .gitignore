@@ -1,5 +1,12 @@
+# Logs
 logs/*.log
 logs/*.err.log
+
+# Local config
 tmp/
 repo-root.txt
 .pnpm-store/
+
+# Electron
+electron/node_modules/
+electron/dist/

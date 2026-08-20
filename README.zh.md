@@ -1,6 +1,6 @@
 # DeepSeek Harness Web 启动器
 
-> **v2.0.0** — 新增 [Electron 桌面客户端](#electron-桌面客户端)：多标签页、Chrome 扩展、Harness 一键更新。
+> **v2.0.1** — 新增 [Electron 桌面客户端](#electron-桌面客户端)：多标签页、Chrome 扩展、Harness 一键更新。
 
 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) Web 界面的 Windows 启动方案，提供两种模式：
 
