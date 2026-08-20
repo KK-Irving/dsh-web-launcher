@@ -607,11 +607,11 @@ function updateTrayMenu() {
     { label: t('trayNewTab'), click: () => { showWindow(); createTab() } },
     { label: t('trayRestartBackend'), click: () => restartBackend() },
     { label: t.lang === 'zh' ? '检查 Harness 更新' : 'Check Harness Update', click: () => checkAndPromptHarnessUpdate() },
-    { label: t.lang === 'zh' ? '检查客户端更新' : 'Check Launcher Update', click: () => checkAndPromptLauncherUpdate() },
+    { label: t.lang === 'zh' ? '检查更新' : 'Check for Updates', click: () => checkForAllUpdates() },
     { type: 'separator' },
     { label: `${t('trayExtensions')} (${extensionCount})`, click: () => showExtensionManager() },
     { label: t('traySettings'), click: () => showSettings() },
-    ...(autoUpdater ? [{ label: t('trayCheckUpdate'), click: () => autoUpdater.checkForUpdates() }] : []),
+
     { type: 'separator' },
     { label: t('trayQuit'), click: () => { isQuitting = true; app.quit() } }
   ])
@@ -716,6 +716,38 @@ async function updateLauncher() {
   } catch (err) {
     steps.push(`ERROR: ${((err.stdout || '') + (err.stderr || '') + (err.message || '')).slice(0, 2000)}`)
     return { ok: false, output: steps.join('\n\n'), error: err.message }
+  }
+}
+
+async function checkForAllUpdates() {
+  const zhMode = t.lang === 'zh'
+  const isPackaged = app.isPackaged
+
+  if (isPackaged && autoUpdater) {
+    try {
+      if (tray) tray.setToolTip(zhMode ? 'DeepSeek Harness (检查更新中...)' : 'DeepSeek Harness (checking...)')
+      const result = await autoUpdater.checkForUpdates()
+      if (!result || !result.updateInfo || result.updateInfo.version === app.getVersion()) {
+        dialog.showMessageBox(mainWindow || undefined, {
+          type: 'info',
+          title: zhMode ? '已是最新版本' : 'Up to Date',
+          message: zhMode
+            ? `当前版本 ${app.getVersion()} 已是最新。`
+            : `Version ${app.getVersion()} is up to date.`
+        })
+      }
+    } catch (err) {
+      dialog.showMessageBox(mainWindow || undefined, {
+        type: 'info',
+        title: zhMode ? '检查更新' : 'Check for Updates',
+        message: zhMode
+          ? `自动更新暂不可用（未找到 GitHub Release）。\n\n如需更新，请访问：\nhttps://github.com/KK-Irving/dsh-web-launcher/releases\n\n当前版本：${app.getVersion()}`
+          : `Auto-update unavailable (no GitHub Release found).\n\nVisit:\nhttps://github.com/KK-Irving/dsh-web-launcher/releases\n\nCurrent version: ${app.getVersion()}`
+      })
+    }
+    updateTrayMenu()
+  } else {
+    await checkAndPromptLauncherUpdate()
   }
 }
 

@@ -1,6 +1,6 @@
 {
   "name": "dsh-desktop",
-  "version": "2.0.1",
+  "version": "2.0.2",
   "description": "DeepSeek Harness Desktop - Electron client with multi-tab, extensions, and auto-update",
   "author": "KK-Irving",
   "license": "MIT",
