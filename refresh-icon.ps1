@@ -107,24 +107,44 @@ function New-WhaleMaster {
     if (-not (Test-Path -LiteralPath $shotPath)) { throw 'Edge 未生成截图' }
     $source = [System.Drawing.Bitmap]::FromFile($shotPath)
     if ($source.Width -lt 64 -or $source.Height -lt 64) { throw '截图尺寸异常' }
-    $master = New-Object System.Drawing.Bitmap(256, 256)
-    for ($y = 0; $y -lt 256; $y++) {
-        for ($x = 0; $x -lt 256; $x++) {
-            $pixel = $source.GetPixel($x, $y)
-            $luminance = [int](0.299 * $pixel.R + 0.587 * $pixel.G + 0.114 * $pixel.B)
-            $alpha = [int]([Math]::Min(255, [Math]::Max(0, ($luminance - 24) * 1.6)))
-            if ($alpha -gt 0) {
-                $master.SetPixel($x, $y, [System.Drawing.Color]::FromArgb($alpha, 77, 107, 254))
+
+    # 使用 LockBits 批量操作像素（比逐像素 GetPixel/SetPixel 快 50-100 倍）
+    $master = New-Object System.Drawing.Bitmap(256, 256, [System.Drawing.Imaging.PixelFormat]::Format32bppArgb)
+    $srcRect = New-Object System.Drawing.Rectangle(0, 0, $source.Width, $source.Height)
+    $dstRect = New-Object System.Drawing.Rectangle(0, 0, 256, 256)
+    $srcData = $source.LockBits($srcRect, [System.Drawing.Imaging.ImageLockMode]::ReadOnly, [System.Drawing.Imaging.PixelFormat]::Format32bppArgb)
+    $dstData = $master.LockBits($dstRect, [System.Drawing.Imaging.ImageLockMode]::WriteOnly, [System.Drawing.Imaging.PixelFormat]::Format32bppArgb)
+    $pixelCount = 256 * 256
+    $srcBytes = New-Object byte[] ($pixelCount * 4)
+    $dstBytes = New-Object byte[] ($pixelCount * 4)
+    [System.Runtime.InteropServices.Marshal]::Copy($srcData.Scan0, $srcBytes, 0, $srcBytes.Length)
+    $opaque = 0
+    for ($i = 0; $i -lt $pixelCount; $i++) {
+        $offset = $i * 4
+        # BGRA format
+        $b = $srcBytes[$offset]
+        $g2 = $srcBytes[$offset + 1]
+        $r = $srcBytes[$offset + 2]
+        $luminance = [int](0.299 * $r + 0.587 * $g2 + 0.114 * $b)
+        $alpha = [int]([Math]::Min(255, [Math]::Max(0, ($luminance - 24) * 1.6)))
+        if ($alpha -gt 0) {
+            $dstBytes[$offset] = 254       # B
+            $dstBytes[$offset + 1] = 107   # G
+            $dstBytes[$offset + 2] = 77    # R
+            $dstBytes[$offset + 3] = $alpha # A
+            if ($alpha -gt 200) {
+                $px = $i % 256
+                $py = [Math]::Floor($i / 256)
+                if (($px % 4 -eq 0) -and ($py % 4 -eq 0)) { $opaque++ }
             }
         }
+        # else: stays 0,0,0,0 (transparent)
     }
+    [System.Runtime.InteropServices.Marshal]::Copy($dstBytes, 0, $dstData.Scan0, $dstBytes.Length)
+    $source.UnlockBits($srcData)
+    $master.UnlockBits($dstData)
     $source.Dispose()
-    $opaque = 0
-    for ($y = 0; $y -lt 256; $y += 4) {
-        for ($x = 0; $x -lt 256; $x += 4) {
-            if ($master.GetPixel($x, $y).A -gt 200) { $opaque++ }
-        }
-    }
+
     if ($opaque -lt 40) { throw '提取的 logo 过于稀疏' }
     return $master
 }
@@ -184,3 +204,9 @@ try {
 New-Ico -Master $master -OutPath $OutIco
 "WROTE=$OutIco"
 $master.Dispose()
+
+# 清理临时目录
+$tmpDir = Join-Path $PSScriptRoot 'tmp'
+if (Test-Path -LiteralPath $tmpDir) {
+    Remove-Item -Path $tmpDir -Recurse -Force -ErrorAction SilentlyContinue
+}
