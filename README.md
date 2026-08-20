@@ -1,12 +1,59 @@
 # DeepSeek Harness Web Launcher
 
-One-click Windows launcher for the [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) Web UI: double-click a desktop shortcut to start the service, and control it from a taskbar tray icon.
+> **v2.0.0** — Now includes an [Electron desktop client](#electron-desktop-client) with multi-tab, Chrome extensions, and auto-update.
+
+One-click Windows launcher for the [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) Web UI. Two modes available:
+
+- **PowerShell Launcher** — lightweight tray icon, opens in your default browser
+- **Electron Desktop** — standalone window with tabs, extensions, global shortcut, harness auto-update
 
 > 中文说明见 [README.zh.md](README.zh.md)。
 
-## Features
+---
 
-- Locates your `deepseek-harness` checkout automatically (explicit `-RepoRoot`, `DSH_REPO_ROOT` env var, `repo-root.txt`, or auto-discovery).
+## Electron Desktop Client
+
+A standalone desktop app — no browser needed. See [`electron/README.md`](electron/README.md) for full documentation.
+
+### Quick Start
+
+```powershell
+# One-click setup + launch:
+powershell -NoProfile -ExecutionPolicy Bypass -File electron\scripts\setup.ps1
+
+# Or step by step:
+cd electron
+pnpm install
+pnpm start
+```
+
+### Key Features
+
+- **Multi-tab** — Ctrl+T new tab, Ctrl+W close, middle-click close
+- **System tray** — minimize to tray, double-click to restore
+- **Global shortcut** — Alt+D toggles window visibility
+- **Chrome extensions** — load unpacked extensions via tray menu
+- **Harness auto-update** — one-click `git pull` + `pnpm install` + `pnpm run build` from tray menu
+- **App auto-update** — checks GitHub Releases for new client versions
+- **i18n** — default Chinese, switchable to English in Settings
+- **No default menu bar** — clean UI, starts maximized
+
+### Build Distributable
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File electron\scripts\setup.ps1 -Build
+# Output: electron\dist\ (NSIS installer + portable exe)
+```
+
+---
+
+## PowerShell Launcher (Legacy)
+
+The original lightweight tray-icon launcher — opens DSH Web in your default browser.
+
+### Features
+
+- Locates your `deepseek-harness` checkout automatically (explicit `-RepoRoot`, `DSH_REPO_ROOT` env var, `repo-root.txt`, or structure-based auto-discovery).
 - Starts the Web UI with `pnpm dsh web` in a hidden window; no console window stays around.
 - Opens `http://127.0.0.1:3080` in your default browser as soon as the service is ready.
 - Shows a tray icon in the taskbar notification area with a right-click menu:
@@ -22,7 +69,7 @@ One-click Windows launcher for the [DeepSeek Harness](https://github.com/deepsee
 - Automatic locale detection: UI text displays in Chinese or English based on system language.
 - Logs go to `logs\` inside this repository.
 
-## Screenshots
+### Screenshots
 
 | Desktop shortcut | Tray icon | Right-click menu | Menu + taskbar |
 | --- | --- | --- | --- |
@@ -30,10 +77,26 @@ One-click Windows launcher for the [DeepSeek Harness](https://github.com/deepsee
 
 > Screenshots are captured from a real run with `tools\capture-screenshots.ps1`; re-run it to refresh them after UI changes.
 
+### Install
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File install.ps1
+# or with explicit path:
+powershell -NoProfile -ExecutionPolicy Bypass -File install.ps1 -RepoRoot "D:\code\deepseek-harness"
+```
+
+### Uninstall
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File install.ps1 -Uninstall
+```
+
+---
+
 ## Requirements
 
-- Windows 10/11 (uses Windows PowerShell 5.1, which is built in).
-- Node.js and [pnpm](https://pnpm.io/) — use the same versions required by your `deepseek-harness` checkout (see its `engines` field in `package.json`). The launcher falls back to `npm`, then to a direct `node` call.
+- Windows 10/11
+- Node.js and [pnpm](https://pnpm.io/) — use the same versions required by your `deepseek-harness` checkout (see its `engines` field in `package.json`).
 - A `deepseek-harness` checkout with dependencies installed:
   ```sh
   cd <your-checkout>
@@ -41,37 +104,11 @@ One-click Windows launcher for the [DeepSeek Harness](https://github.com/deepsee
   pnpm run build   # builds apps/web; required before the first launch
   ```
 
-## Install (any user, any path)
-
-1. Clone this repository anywhere, for example:
-   ```sh
-   git clone <this-repo-url> dsh-web-launcher
-   ```
-2. Run the installer. It locates the harness checkout, writes the local config, and creates the desktop shortcut:
-   ```powershell
-   powershell -NoProfile -ExecutionPolicy Bypass -File dsh-web-launcher\install.ps1
-   # or with an explicit checkout path:
-   powershell -NoProfile -ExecutionPolicy Bypass -File dsh-web-launcher\install.ps1 -RepoRoot "D:\code\deepseek-harness"
-   # or with a custom port:
-   powershell -NoProfile -ExecutionPolicy Bypass -File dsh-web-launcher\install.ps1 -RepoRoot "D:\code\deepseek-harness" -Port 8080
-   ```
-3. Double-click **DeepSeek Harness Web** on the desktop.
-
-To pin to the taskbar: right-click the desktop shortcut → *Pin to taskbar*.
-
-## Uninstall
-
-```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File dsh-web-launcher\install.ps1 -Uninstall
-```
-
-This removes the desktop shortcut and `repo-root.txt`. The launcher scripts and icon remain in place; delete the directory manually if no longer needed.
-
 ## How the harness checkout is located
 
-Priority order:
+Priority order (shared by both launcher modes):
 
-1. `-RepoRoot <path>` argument (written into the desktop shortcut by `install.ps1`)
+1. `-RepoRoot <path>` argument / stored config
 2. `DSH_REPO_ROOT` environment variable
 3. `repo-root.txt` next to `start-web.ps1` (written by `install.ps1`, git-ignored)
 4. Auto-discovery (structure-based scan, not limited to a specific folder name):
@@ -83,43 +120,31 @@ A directory is accepted when it contains `package.json`, `apps\cli\src\bin.ts`, 
 
 When a matching directory is found, the launcher also checks its git remote. If the remote URL does not match `deepseek-harness`, a warning is displayed so you can confirm it's the right repo. Non-git directories (e.g. extracted archives) are accepted with a note.
 
-## Usage
-
-- Double-click the desktop shortcut, or run directly:
-  ```powershell
-  powershell -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File start-web.ps1
-  ```
-- With a custom port:
-  ```powershell
-  powershell -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File start-web.ps1 -Port 8080
-  ```
-- Self-check mode (prints environment info and exits):
-  ```powershell
-  powershell -NoProfile -ExecutionPolicy Bypass -File start-web.ps1 -Test
-  ```
-- Regenerate the icon (renders the whale logo from `apps/web/public/favicon.svg` via headless Edge; falls back to a built-in style icon):
-  ```powershell
-  powershell -NoProfile -ExecutionPolicy Bypass -File refresh-icon.ps1
-  ```
-- Refresh the documentation screenshots:
-  ```powershell
-  powershell -NoProfile -ExecutionPolicy Bypass -File tools\capture-screenshots.ps1
-  ```
-
 ## Repository layout
 
 ```
 dsh-web-launcher/
-├── start-web.ps1                    # main launcher (tray icon + service control)
-├── install.ps1                      # installer/uninstaller: locate harness + desktop shortcut
-├── refresh-icon.ps1                 # regenerate dsh-web.ico
-├── lib\common.ps1                   # shared helpers (checkout discovery, runners, probing, i18n)
-├── tools\capture-screenshots.ps1    # documentation screenshot capture
-├── docs\screenshots\                # screenshots referenced by the READMEs
-├── dsh-web.ico                      # tray / shortcut icon
-├── VERSION                          # launcher version identifier
-├── logs\                            # runtime logs (git-ignored)
-└── repo-root.txt                    # local checkout path (git-ignored)
+├── electron/                        # Electron desktop client (v2.0)
+│   ├── package.json                 # Electron + builder config
+│   ├── README.md                    # Full Electron documentation
+│   ├── scripts/
+│   │   ├── setup.ps1                # One-click install + launch
+│   │   └── setup.bat                # Same, for cmd.exe
+│   └── src/
+│       ├── main/index.js            # Main process (window, tray, tabs, backend, extensions, updater)
+│       ├── main/locale.js           # i18n strings (zh/en)
+│       ├── preload/index.js         # Context bridge (safe IPC)
+│       └── assets/shell.html        # Tab bar UI
+├── start-web.ps1                    # PowerShell launcher (tray icon + service control)
+├── install.ps1                      # PowerShell installer/uninstaller
+├── refresh-icon.ps1                 # Regenerate dsh-web.ico
+├── lib\common.ps1                   # Shared helpers (discovery, runners, probing, i18n)
+├── tools\capture-screenshots.ps1    # Documentation screenshot capture
+├── docs\screenshots\                # Screenshots referenced by READMEs
+├── dsh-web.ico                      # Tray / shortcut icon
+├── VERSION                          # Project version (2.0.0)
+├── logs\                            # Runtime logs (git-ignored)
+└── repo-root.txt                    # Local checkout path (git-ignored)
 ```
 
 ## Troubleshooting
@@ -127,6 +152,7 @@ dsh-web-launcher/
 - **Tray balloon says the checkout was not found** — run `install.ps1 -RepoRoot "<path>"`, or set `DSH_REPO_ROOT`.
 - **The service exits immediately** — open `logs\web-server.err.log`; usually missing `pnpm install` / `pnpm run build` in the checkout.
 - **Port 3080 is occupied by another app** — the launcher treats a ready-but-not-dsh service as "already running" only when the response contains the `__DSH_BOOT__` marker; otherwise start-up fails and the log shows the port conflict. Use `-Port` to choose a different port.
+- **Electron: "检查更新" shows error** — ensure `git` is in your system PATH and the harness directory is a git repo with a configured remote.
 - **Multiple checkouts on one machine** — run `install.ps1` per checkout; rename the first shortcut before installing the next one, since the shortcut name is fixed.
 - **Tray icon is hidden** — drag it out of the taskbar overflow area ("Show hidden icons").
 - **Balloon says service exited unexpectedly** — the health monitor checks every 30 seconds; open `logs\web-server.err.log` for details, then use the tray menu to restart.

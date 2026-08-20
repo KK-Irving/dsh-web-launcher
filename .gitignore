@@ -2,3 +2,4 @@ logs/*.log
 logs/*.err.log
 tmp/
 repo-root.txt
+.pnpm-store/

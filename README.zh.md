@@ -1,17 +1,64 @@
-# DeepSeek Harness Web 一键启动器
+# DeepSeek Harness Web 启动器
 
-[DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) Web 界面的 Windows 一键启动方案：双击桌面快捷方式启动服务，通过任务栏托盘图标管理，无需命令行。
+> **v2.0.0** — 新增 [Electron 桌面客户端](#electron-桌面客户端)：多标签页、Chrome 扩展、Harness 一键更新。
+
+[DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) Web 界面的 Windows 启动方案，提供两种模式：
+
+- **PowerShell 启动器** — 轻量托盘图标，用默认浏览器打开
+- **Electron 桌面客户端** — 独立窗口，多标签页、扩展支持、全局快捷键、Harness 自动更新
 
 > English guide: [README.md](README.md)。
 
-## 功能特性
+---
 
-- 自动定位 `deepseek-harness` 仓库（`-RepoRoot` 参数 > `DSH_REPO_ROOT` 环境变量 > `repo-root.txt` > 自动发现）。
+## Electron 桌面客户端
+
+独立桌面应用，无需浏览器。完整文档见 [`electron/README.md`](electron/README.md)。
+
+### 快速开始
+
+```powershell
+# 一键安装并启动：
+powershell -NoProfile -ExecutionPolicy Bypass -File electron\scripts\setup.ps1
+
+# 或手动：
+cd electron
+pnpm install
+pnpm start
+```
+
+### 主要功能
+
+- **多标签页** — Ctrl+T 新建、Ctrl+W 关闭、中键关闭、标签持久化
+- **系统托盘** — 关闭窗口最小化到托盘，双击恢复
+- **全局快捷键** — Alt+D 切换窗口显示/隐藏
+- **Chrome 扩展** — 通过托盘菜单加载未打包的 Chrome 扩展
+- **Harness 一键更新** — 托盘菜单中检查更新，一键 `git pull` + `pnpm install` + `pnpm run build`
+- **客户端自动更新** — 检查 GitHub Releases 的新版本
+- **中英文切换** — 默认中文，可在设置中切换为英文
+- **无默认菜单栏** — 简洁界面，启动即最大化
+
+### 打包分发
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File electron\scripts\setup.ps1 -Build
+# 产物：electron\dist\（NSIS 安装程序 + 便携版 exe）
+```
+
+---
+
+## PowerShell 启动器（经典模式）
+
+原始的轻量托盘图标启动器 — 在默认浏览器中打开 DSH Web。
+
+### 功能特性
+
+- 自动定位 `deepseek-harness` 仓库（`-RepoRoot` 参数 > `DSH_REPO_ROOT` 环境变量 > `repo-root.txt` > 结构化自动发现）。
 - 以隐藏窗口运行 `pnpm dsh web` 启动 Web 服务，不残留命令行窗口。
 - 服务就绪后自动用默认浏览器打开 `http://127.0.0.1:3080`。
 - 任务栏通知区域显示托盘图标，右键菜单：
   - 打开 Web 界面（双击托盘图标等效）
-  - 启动/停止插件热更新监听 (dev:web)（切换 client-plugin 的 HMR 监听）
+  - 启动/停止插件热更新监听 (dev:web)
   - 打开日志目录
   - 重启 Web 服务
   - 退出（停止服务）
@@ -22,18 +69,32 @@
 - 自动语言检测：根据系统语言显示中文或英文界面。
 - 运行日志写入本仓库 `logs\` 目录。
 
-## 截图
+### 截图
 
 | 桌面快捷方式 | 托盘图标 | 右键菜单 | 菜单与任务栏同框 |
 | --- | --- | --- | --- |
 | ![桌面快捷方式](docs/screenshots/desktop-shortcut.png) | ![托盘图标](docs/screenshots/tray-icon.png) | ![托盘右键菜单](docs/screenshots/tray-menu.png) | ![托盘菜单概览](docs/screenshots/tray-menu-overview.png) |
 
-> 截图由 `tools\capture-screenshots.ps1` 从真实运行中截取；界面变化后可重新运行刷新。
+### 安装
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File install.ps1
+# 或显式指定路径：
+powershell -NoProfile -ExecutionPolicy Bypass -File install.ps1 -RepoRoot "D:\code\deepseek-harness"
+```
+
+### 卸载
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File install.ps1 -Uninstall
+```
+
+---
 
 ## 环境要求
 
-- Windows 10/11（使用系统内置的 Windows PowerShell 5.1，无需额外安装）。
-- Node.js 与 [pnpm](https://pnpm.io/) —— 使用与 `deepseek-harness` 仓库 `package.json` 中 `engines` 字段一致的版本。无 pnpm 时依次回退到 npm、直接 node 调用。
+- Windows 10/11
+- Node.js 与 [pnpm](https://pnpm.io/) — 使用与 `deepseek-harness` 仓库 `package.json` 中 `engines` 字段一致的版本。
 - 一个已安装依赖的 `deepseek-harness` 仓库：
   ```sh
   cd <仓库路径>
@@ -41,35 +102,11 @@
   pnpm run build   # 构建 apps/web，首次启动前需要
   ```
 
-## 安装（任意用户、任意路径）
-
-1. 将本仓库 clone 到任意位置，例如：
-   ```sh
-   git clone <本仓库地址> dsh-web-launcher
-   ```
-2. 运行安装器：自动定位 harness 仓库、写入本机配置、创建桌面快捷方式：
-   ```powershell
-   powershell -NoProfile -ExecutionPolicy Bypass -File dsh-web-launcher\install.ps1
-   # 或显式指定仓库路径：
-   powershell -NoProfile -ExecutionPolicy Bypass -File dsh-web-launcher\install.ps1 -RepoRoot "D:\code\deepseek-harness"
-   # 或指定自定义端口：
-   powershell -NoProfile -ExecutionPolicy Bypass -File dsh-web-launcher\install.ps1 -RepoRoot "D:\code\deepseek-harness" -Port 8080
-   ```
-3. 双击桌面上的 **DeepSeek Harness Web** 即可。
-
-固定到任务栏：右键桌面快捷方式 → 固定到任务栏。
-
-## 卸载
-
-```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File dsh-web-launcher\install.ps1 -Uninstall
-```
-
-此操作删除桌面快捷方式和 `repo-root.txt`。启动器脚本和图标文件保留在当前目录，如不再需要可手动删除整个目录。
-
 ## 仓库定位顺序
 
-1. `-RepoRoot <路径>` 参数（`install.ps1` 会把它写入桌面快捷方式）
+两种模式共用相同的定位逻辑：
+
+1. `-RepoRoot <路径>` 参数 / 存储的配置
 2. `DSH_REPO_ROOT` 环境变量
 3. `start-web.ps1` 同级的 `repo-root.txt`（`install.ps1` 写入，已 git 忽略）
 4. 自动发现（基于目录结构扫描，不限定文件夹名称）：
@@ -77,57 +114,46 @@ powershell -NoProfile -ExecutionPolicy Bypass -File dsh-web-launcher\install.ps1
    - 当前盘根下的常见名称：`deepseek-harness`、`dsh`、`DeepSeek`
    - 用户主目录（`%USERPROFILE%`）下的所有子文件夹
 
-目录需同时包含 `package.json`、`apps\cli\src\bin.ts` 和 `apps\web\` 才会被认可。**文件夹名称不限** —— 启动器完全通过内部目录结构识别 harness 仓库，因此你可以使用任意名称。
+目录需同时包含 `package.json`、`apps\cli\src\bin.ts` 和 `apps\web\` 才会被认可。**文件夹名称不限** — 启动器完全通过内部目录结构识别 harness 仓库，因此你可以使用任意名称。
 
-找到目录后，启动器还会检查其 git remote 地址。如果 remote URL 看起来不像 `deepseek-harness`，会显示黄色提示供你确认。非 git 目录（如解压缩的源码包）也能正常使用，仅显示一条提示信息。
-
-## 使用
-
-- 双击桌面快捷方式，或直接运行：
-  ```powershell
-  powershell -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File start-web.ps1
-  ```
-- 指定自定义端口：
-  ```powershell
-  powershell -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File start-web.ps1 -Port 8080
-  ```
-- 自检模式（打印环境信息后退出）：
-  ```powershell
-  powershell -NoProfile -ExecutionPolicy Bypass -File start-web.ps1 -Test
-  ```
-- 重新生成图标（用 Edge 无头模式渲染 `apps/web/public/favicon.svg` 的鲸鱼 logo，失败自动降级为内置样式图标）：
-  ```powershell
-  powershell -NoProfile -ExecutionPolicy Bypass -File refresh-icon.ps1
-  ```
-- 刷新文档截图：
-  ```powershell
-  powershell -NoProfile -ExecutionPolicy Bypass -File tools\capture-screenshots.ps1
-  ```
+找到目录后会检查其 git remote 地址。如果 remote URL 看起来不像 `deepseek-harness`，会显示提示供你确认。非 git 目录（如解压缩的源码包）也能正常使用。
 
 ## 目录结构
 
 ```
 dsh-web-launcher/
-├── start-web.ps1                    # 主启动脚本（托盘图标 + 服务控制）
-├── install.ps1                      # 安装/卸载器：定位 harness 仓库 + 创建桌面快捷方式
+├── electron/                        # Electron 桌面客户端 (v2.0)
+│   ├── package.json                 # Electron + 打包配置
+│   ├── README.md                    # Electron 完整文档
+│   ├── scripts/
+│   │   ├── setup.ps1                # 一键安装 + 启动
+│   │   └── setup.bat                # 同上（cmd.exe 版）
+│   └── src/
+│       ├── main/index.js            # 主进程（窗口/托盘/标签/后端/扩展/更新）
+│       ├── main/locale.js           # 国际化字符串（中/英）
+│       ├── preload/index.js         # 安全桥接（IPC）
+│       └── assets/shell.html        # 标签栏 UI
+├── start-web.ps1                    # PowerShell 启动器（托盘图标 + 服务控制）
+├── install.ps1                      # PowerShell 安装/卸载器
 ├── refresh-icon.ps1                 # 重新生成 dsh-web.ico
 ├── lib\common.ps1                   # 共享函数库（仓库定位、启动命令、端口检测、国际化）
 ├── tools\capture-screenshots.ps1    # 文档截图工具
 ├── docs\screenshots\                # README 引用的截图
 ├── dsh-web.ico                      # 托盘 / 快捷方式图标
-├── VERSION                          # 启动器版本标识
+├── VERSION                          # 项目版本（2.0.0）
 ├── logs\                            # 运行日志（git 忽略）
 └── repo-root.txt                    # 本机 harness 仓库路径（git 忽略）
 ```
 
 ## 常见问题
 
-- **托盘提示"未找到仓库"** —— 运行 `install.ps1 -RepoRoot "<路径>"`，或设置 `DSH_REPO_ROOT`。
-- **服务启动后立刻退出** —— 查看 `logs\web-server.err.log`，通常是仓库未执行 `pnpm install` / `pnpm run build`。
-- **端口被其他程序占用** —— 只有响应包含 `__DSH_BOOT__` 标记时才会判定为"已有 dsh 服务"；否则启动失败并在日志中体现端口冲突。可使用 `-Port` 指定其他端口。
-- **一台机器多个 harness 仓库** —— 每个仓库各运行一次 `install.ps1`；快捷方式名称固定，装第二个前先重命名已有快捷方式。
-- **托盘图标被收纳** —— 从任务栏"显示隐藏的图标"中拖出即可。
-- **气泡提示"服务进程已意外退出"** —— 健康监控每 30 秒检测一次；查看 `logs\web-server.err.log` 了解详情，然后通过托盘菜单重启。
+- **托盘提示"未找到仓库"** — 运行 `install.ps1 -RepoRoot "<路径>"`，或设置 `DSH_REPO_ROOT`。
+- **服务启动后立刻退出** — 查看 `logs\web-server.err.log`，通常是仓库未执行 `pnpm install` / `pnpm run build`。
+- **端口被其他程序占用** — 只有响应包含 `__DSH_BOOT__` 标记时才会判定为"已有 dsh 服务"；否则启动失败并在日志中体现端口冲突。可使用 `-Port` 指定其他端口。
+- **Electron「检查更新」报错** — 确保 `git` 在系统 PATH 中，且 harness 目录是一个配置了 remote 的 git 仓库。
+- **一台机器多个 harness 仓库** — 每个仓库各运行一次 `install.ps1`；快捷方式名称固定，装第二个前先重命名已有快捷方式。
+- **托盘图标被收纳** — 从任务栏"显示隐藏的图标"中拖出即可。
+- **气泡提示"服务进程已意外退出"** — 健康监控每 30 秒检测一次；查看 `logs\web-server.err.log` 了解详情，然后通过托盘菜单重启。
 
 ## 许可
 

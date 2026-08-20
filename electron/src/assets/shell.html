@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>DeepSeek Harness</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body { height: 100%; overflow: hidden; background: #1e1e2e; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif; }
+
+    #tab-bar {
+      display: flex;
+      align-items: center;
+      height: 40px;
+      background: #181825;
+      border-bottom: 1px solid #313244;
+      -webkit-app-region: drag;
+      user-select: none;
+      padding: 0 8px;
+    }
+
+    #tabs-container {
+      display: flex;
+      flex: 1;
+      overflow-x: auto;
+      gap: 2px;
+      align-items: center;
+      height: 100%;
+      -webkit-app-region: no-drag;
+    }
+
+    #tabs-container::-webkit-scrollbar { height: 0; }
+
+    .tab {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 0 12px;
+      height: 30px;
+      border-radius: 6px;
+      background: transparent;
+      color: #a6adc8;
+      font-size: 12px;
+      cursor: pointer;
+      white-space: nowrap;
+      max-width: 200px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      transition: background 0.15s;
+      border: none;
+    }
+
+    .tab:hover { background: #313244; color: #cdd6f4; }
+    .tab.active { background: #313244; color: #cdd6f4; }
+
+    .tab-close {
+      display: none;
+      width: 16px;
+      height: 16px;
+      border-radius: 4px;
+      background: transparent;
+      border: none;
+      color: #6c7086;
+      font-size: 14px;
+      cursor: pointer;
+      line-height: 1;
+      text-align: center;
+      flex-shrink: 0;
+    }
+    .tab-close:hover { background: #45475a; color: #f38ba8; }
+    .tab:hover .tab-close { display: inline-block; }
+
+    .tab-title {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      pointer-events: none;
+    }
+
+    #new-tab-btn {
+      width: 28px;
+      height: 28px;
+      border-radius: 6px;
+      background: transparent;
+      border: none;
+      color: #6c7086;
+      font-size: 18px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+      -webkit-app-region: no-drag;
+    }
+    #new-tab-btn:hover { background: #313244; color: #cdd6f4; }
+
+    #window-controls {
+      display: flex;
+      gap: 4px;
+      margin-left: 8px;
+      -webkit-app-region: no-drag;
+    }
+
+    .win-btn {
+      width: 28px;
+      height: 28px;
+      border-radius: 6px;
+      background: transparent;
+      border: none;
+      color: #6c7086;
+      font-size: 13px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .win-btn:hover { background: #313244; color: #cdd6f4; }
+    .win-btn.close:hover { background: #f38ba8; color: #1e1e2e; }
+
+    #content {
+      flex: 1;
+      height: calc(100% - 40px);
+      background: #1e1e2e;
+    }
+  </style>
+</head>
+<body>
+  <div id="tab-bar">
+    <div id="tabs-container"></div>
+    <button id="new-tab-btn" title="新建标签页">+</button>
+    <div id="window-controls">
+      <button class="win-btn" id="btn-min" title="最小化">─</button>
+      <button class="win-btn" id="btn-max" title="最大化">□</button>
+      <button class="win-btn close" id="btn-close" title="关闭">✕</button>
+    </div>
+  </div>
+  <div id="content"></div>
+
+  <script>
+    // Uses the preload-exposed dshDesktop bridge (contextIsolation: true)
+    const desktop = window.dshDesktop
+
+    // i18n: titles update based on language config
+    const i18n = {
+      zh: { newTab: '新建标签页', minimize: '最小化', maximize: '最大化', close: '关闭' },
+      en: { newTab: 'New Tab', minimize: 'Minimize', maximize: 'Maximize', close: 'Close' }
+    }
+    // Apply locale from config (async, fallback to zh)
+    desktop.getConfig('language').then((lang) => {
+      const s = i18n[lang] || i18n.zh
+      document.documentElement.lang = lang || 'zh'
+      document.getElementById('new-tab-btn').title = s.newTab
+      document.getElementById('btn-min').title = s.minimize
+      document.getElementById('btn-max').title = s.maximize
+      document.getElementById('btn-close').title = s.close
+    })
+
+    const tabsContainer = document.getElementById('tabs-container')
+    const newTabBtn = document.getElementById('new-tab-btn')
+
+    // Tab bar rendering
+    desktop.onTabsUpdated((tabs) => {
+      tabsContainer.innerHTML = ''
+      for (const tab of tabs) {
+        const el = document.createElement('button')
+        el.className = 'tab' + (tab.active ? ' active' : '')
+        el.innerHTML = `
+          <span class="tab-title">${escapeHtml(tab.title)}</span>
+          <span class="tab-close" data-id="${tab.id}">&times;</span>
+        `
+        el.addEventListener('click', (e) => {
+          if (e.target.classList.contains('tab-close')) {
+            desktop.closeTab(e.target.dataset.id)
+          } else {
+            desktop.activateTab(tab.id)
+          }
+        })
+        // Middle-click to close
+        el.addEventListener('auxclick', (e) => {
+          if (e.button === 1) desktop.closeTab(tab.id)
+        })
+        tabsContainer.appendChild(el)
+      }
+    })
+
+    // New tab
+    newTabBtn.addEventListener('click', () => {
+      desktop.newTab()
+    })
+
+    // Window controls
+    document.getElementById('btn-min').addEventListener('click', () => desktop.minimize())
+    document.getElementById('btn-max').addEventListener('click', () => desktop.maximize())
+    document.getElementById('btn-close').addEventListener('click', () => desktop.close())
+
+    // Keyboard shortcuts
+    document.addEventListener('keydown', (e) => {
+      if (e.ctrlKey && e.key === 't') { desktop.newTab(); e.preventDefault() }
+      if (e.ctrlKey && e.key === 'w') { desktop.closeTab(null); e.preventDefault() } // close active
+    })
+
+    function escapeHtml(text) {
+      const div = document.createElement('div')
+      div.textContent = text
+      return div.innerHTML
+    }
+  </script>
+</body>
+</html>
