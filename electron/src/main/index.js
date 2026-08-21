@@ -16,7 +16,66 @@ const { spawn } = require('child_process')
 const http = require('http')
 const fs = require('fs')
 const Store = require('electron-store')
+
 const { createT } = require('./locale')
+
+// ── Logging System ────────────────────────────────────────────────────────────
+// Logs written to: <install_or_dev_dir>/logs/<YYYY-MM-DD>/<HH-mm-ss>.log
+// Controlled by store.debugLog (toggle from tray menu)
+
+const _logsEnabled = (() => {
+  try {
+    // Read store early - electron-store may not be initialized yet at require time
+    // We'll re-check after store is created
+    return false
+  } catch { return false }
+})()
+let _logStream = null
+let _logDir = ''
+
+function initLogger() {
+  const enabled = store.get('debugLog')
+  if (!enabled) { _log = () => {}; return }
+
+  const baseDir = app.isPackaged ? path.dirname(process.execPath) : path.resolve(__dirname, '..', '..', '..')
+  const now = new Date()
+  const dateStr = now.getFullYear() + '-' + String(now.getMonth()+1).padStart(2,'0') + '-' + String(now.getDate()).padStart(2,'0')
+  const timeStr = String(now.getHours()).padStart(2,'0') + '-' + String(now.getMinutes()).padStart(2,'0') + '-' + String(now.getSeconds()).padStart(2,'0')
+  _logDir = path.join(baseDir, 'logs', dateStr)
+  
+  try {
+    fs.mkdirSync(_logDir, { recursive: true })
+    const logFile = path.join(_logDir, timeStr + '.log')
+    _logStream = fs.createWriteStream(logFile, { flags: 'a' })
+    _log = (msg) => {
+      const ts = new Date().toLocaleString('zh-CN', { hour12: false, timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone })
+      const line = `[${ts}] ${msg}`
+      _logStream.write(line + '\n')
+    }
+    _log('=== DeepSeek Harness Desktop v' + app.getVersion() + ' ===')
+    _log('Platform: ' + process.platform + ' ' + process.arch)
+    _log('Electron: ' + process.versions.electron)
+    _log('Packaged: ' + app.isPackaged)
+    _log('Exe: ' + process.execPath)
+    _log('Timezone: ' + Intl.DateTimeFormat().resolvedOptions().timeZone)
+    _log('Log file: ' + logFile)
+  } catch (err) {
+    console.error('[dsh-desktop] Failed to init logger:', err.message)
+    _log = () => {}
+  }
+}
+
+function _log(msg) {
+  // Placeholder until initLogger runs; if debugLog is off, stays as no-op
+}
+
+function getLogDir() {
+  const baseDir = app.isPackaged ? path.dirname(process.execPath) : path.resolve(__dirname, '..', '..', '..')
+  return path.join(baseDir, 'logs')
+}
+
+
+
 
 // ── Configuration ────────────────────────────────────────────────────────────
 
@@ -35,6 +94,7 @@ const store = new Store({
     language: 'zh', // 'zh' | 'en'
     theme: 'system', // 'system' | 'dark' | 'light'
     bookmarks: null, // user-editable bookmarks array
+    debugLog: false, // enable startup/runtime logging
     extensions: [] // Chrome extension paths (unpacked directories)
   }
 })
@@ -91,7 +151,7 @@ function findHarnessInDir(searchDir) {
 }
 
 function resolveHarnessRoot() {
-  // 1. Stored setting
+  // 1. Stored setting (primary for packaged builds)
   const stored = store.get('harnessRoot')
   if (stored && isValidHarnessRoot(stored)) return stored
 
@@ -99,8 +159,10 @@ function resolveHarnessRoot() {
   const envRoot = process.env.DSH_REPO_ROOT
   if (envRoot && isValidHarnessRoot(envRoot)) return envRoot
 
-  // 3. repo-root.txt (beside the launcher)
-  const launcherDir = path.resolve(__dirname, '..', '..', '..')
+  // 3. repo-root.txt (beside the launcher or beside the exe)
+  const launcherDir = app.isPackaged
+    ? path.dirname(app.getPath('exe'))
+    : path.resolve(__dirname, '..', '..', '..')
   const configFile = path.join(launcherDir, 'repo-root.txt')
   if (fs.existsSync(configFile)) {
     const value = fs.readFileSync(configFile, 'utf8').trim()
@@ -160,6 +222,7 @@ async function waitForReady(timeoutMs = STARTUP_TIMEOUT_MS) {
 }
 
 function resolveRunner(harnessRoot) {
+  _log('resolveRunner for: ' + harnessRoot)
   const { execSync } = require('child_process')
   const isWin = process.platform === 'win32'
   function commandExists(c) {
@@ -179,6 +242,7 @@ function startBackend(harnessRoot) {
   const runner = resolveRunner(harnessRoot)
   if (!runner) { console.error('[dsh-desktop] No pnpm/npm/node found'); return }
   console.log(`[dsh-desktop] Starting: ${runner.cmd} ${runner.args.join(' ')}`)
+  _log(`startBackend: ${runner.cmd} ${runner.args.join(' ')}`)
 
   backendProcess = spawn(runner.cmd, runner.args, {
     cwd: harnessRoot,
@@ -191,6 +255,7 @@ function startBackend(harnessRoot) {
   backendProcess.on('exit', (code) => {
     if (!isQuitting) {
       console.error(`[dsh-desktop] Backend exited with code ${code}`)
+      _log(`backend exited: code=${code}`)
       backendProcess = null
       notifyAllTabs('backend-status', { running: false, code })
       updateTrayStatus('stopped')
@@ -205,6 +270,7 @@ function startBackend(harnessRoot) {
 
 function stopBackend() {
   if (!backendProcess) return
+  _log('stopBackend called')
   try {
     if (process.platform === 'win32') {
       spawn('taskkill', ['/PID', String(backendProcess.pid), '/T', '/F'], { windowsHide: true })
@@ -251,6 +317,7 @@ function createTab(url = WEB_URL) {
 
   // New tab page: load local HTML instead of remote URL
   if (url === 'newtab') {
+    _log('createTab: newtab')
     const id = generateTabId()
     const view = new BrowserView({
       webPreferences: {
@@ -329,6 +396,7 @@ function createTab(url = WEB_URL) {
     return { action: 'deny' }
   })
 
+  _log('createTab: ' + url)
   view.webContents.loadURL(url)
 
   const tab = { id, view, title: t('newTab'), url }
@@ -422,6 +490,7 @@ function persistTabs() {
 // ── Chrome Extension Loading ─────────────────────────────────────────────────
 
 async function loadExtensions() {
+  _log('loadExtensions: ' + (store.get('extensions') || []).length + ' extensions')
   const extensionPaths = store.get('extensions')
   if (!extensionPaths || extensionPaths.length === 0) return
 
@@ -446,6 +515,7 @@ async function loadExtensions() {
 }
 
 function addExtension(extPath) {
+  _log('addExtension: ' + extPath)
   const extensions = store.get('extensions')
   if (extensions.includes(extPath)) return false
 
@@ -494,7 +564,7 @@ function removeExtension(extPath) {
 
 let autoUpdater = null
 
-function initAutoUpdater() {
+function     initAutoUpdater() {
   if (!store.get('autoUpdate')) return
   try {
     // electron-updater is optional - only works in packaged builds
@@ -558,7 +628,7 @@ function initAutoUpdater() {
 
 let splashWindow = null
 
-function createSplashWindow() {
+function     createSplashWindow() {
   const { BrowserWindow } = require('electron')
   splashWindow = new BrowserWindow({
     width: 500,
@@ -587,6 +657,7 @@ function sendSplashStatus(data) {
 }
 
 function closeSplashAndShowMain() {
+  _log('closeSplashAndShowMain')
   if (splashWindow && !splashWindow.isDestroyed()) {
     splashWindow.close()
     splashWindow = null
@@ -595,6 +666,7 @@ function closeSplashAndShowMain() {
 }
 
 function createMainWindow() {
+  _log('createMainWindow')
   // Remove default menu bar (File/Edit/View/Window/Help)
   Menu.setApplicationMenu(null)
 
@@ -675,17 +747,39 @@ function showWindow() {
 }
 
 function getIconPath() {
-  const icoPath = path.resolve(__dirname, '..', '..', '..', 'dsh-web.ico')
-  if (fs.existsSync(icoPath)) return icoPath
-  return path.join(__dirname, '..', 'assets', 'icon.png')
+  // In packaged build, icon is in extraResources
+  if (app.isPackaged) {
+    const resourceIco = path.join(process.resourcesPath, 'dsh-web.ico')
+    if (fs.existsSync(resourceIco)) return resourceIco
+  }
+  // Dev mode: relative to project root
+  const devIco = path.resolve(__dirname, '..', '..', '..', 'dsh-web.ico')
+  if (fs.existsSync(devIco)) return devIco
+  // Fallback: create a simple 16x16 icon from nativeImage
+  return ''
 }
 
 // ── System Tray ──────────────────────────────────────────────────────────────
 
-function createTray() {
+function     createTray() {
   const iconPath = getIconPath()
-  const icon = nativeImage.createFromPath(iconPath)
-  tray = new Tray(icon.resize({ width: 16, height: 16 }))
+  let icon
+  if (iconPath && fs.existsSync(iconPath)) {
+    icon = nativeImage.createFromPath(iconPath)
+    // .ico files on Windows work directly with Tray, no need to resize
+  } else {
+    // Fallback: use app's built-in icon or create a 16x16 data URL icon
+    const fallbackDataUrl = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAAMklEQVQ4T2NkYPj/n4EBFTAiC6ALMDIyMjKgK0AXQA9kdAHsauEC2NUNGgOjYTAaBgBfmBARGoiJlAAAAABJRU5ErkJggg=='
+    icon = nativeImage.createFromDataURL(fallbackDataUrl)
+  }
+  try {
+    tray = new Tray(icon)
+  } catch (err) {
+    console.error('[dsh-desktop] Failed to create tray:', err.message)
+    // Last resort fallback
+    const fallback = nativeImage.createFromDataURL('data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAAMklEQVQ4T2NkYPj/n4EBFTAiC6ALMDIyMjKgK0AXQA9kdAHsauEC2NUNGgOjYTAaBgBfmBARGoiJlAAAAABJRU5ErkJggg==')
+    tray = new Tray(fallback)
+  }
   tray.setToolTip('DeepSeek Harness')
 
   updateTrayMenu()
@@ -693,6 +787,31 @@ function createTray() {
   tray.on('double-click', () => {
     showWindow()
   })
+}
+
+function toggleDebugLog() {
+  _log('toggleDebugLog called')
+  const current = store.get('debugLog')
+  store.set('debugLog', !current)
+  updateTrayMenu()
+  const zhMode = t.lang === 'zh'
+  const logPath = getLogDir()
+  dialog.showMessageBox(mainWindow || undefined, {
+    type: 'info',
+    title: zhMode ? '调试日志' : 'Debug Log',
+    message: !current
+      ? (zhMode
+        ? `调试日志已开启。\n\n请重启客户端以记录完整的启动日志。\n\n日志路径：\n${logPath}\n\n提示：可在新标签页「快捷操作」中点击「日志」直接打开该文件夹。`
+        : `Debug logging enabled.\n\nRestart the client to capture full startup logs.\n\nLog path:\n${logPath}\n\nTip: Click "Logs" in the new tab page to open this folder.`)
+      : (zhMode ? '调试日志已关闭。下次启动将不再记录日志。' : 'Debug logging disabled. No logs will be written on next launch.')
+  })
+}
+
+function openLogFolder() {
+  _log('openLogFolder: ' + getLogDir())
+  const logDir = getLogDir()
+  if (!fs.existsSync(logDir)) fs.mkdirSync(logDir, { recursive: true })
+  shell.openPath(logDir)
 }
 
 function updateTrayMenu() {
@@ -714,6 +833,7 @@ function updateTrayMenu() {
     { label: `${t('trayExtensions')} (${extensionCount})`, click: () => showExtensionManager() },
     { label: t('traySettings'), click: () => showSettings() },
 
+    { label: (store.get('debugLog') ? '✓ ' : '') + (t.lang === 'zh' ? '调试日志' : 'Debug Log'), click: () => toggleDebugLog() },
     { type: 'separator' },
     { label: t('trayQuit'), click: () => { isQuitting = true; app.quit() } }
   ])
@@ -731,7 +851,8 @@ function updateTrayStatus(status) {
 // ── Backend Control ──────────────────────────────────────────────────────────
 
 async function restartBackend() {
-  const harnessRoot = resolveHarnessRoot()
+  _log('restartBackend called')
+      const harnessRoot = resolveHarnessRoot()
   if (!harnessRoot) {
     dialog.showErrorBox(t('appName'), t('backendNotFound'))
     return
@@ -822,33 +943,47 @@ async function updateLauncher() {
 }
 
 async function checkForAllUpdates() {
+  _log('checkForAllUpdates called, isPackaged=' + app.isPackaged)
   const zhMode = t.lang === 'zh'
   const isPackaged = app.isPackaged
 
-  if (isPackaged && autoUpdater) {
-    try {
-      if (tray) tray.setToolTip(zhMode ? 'DeepSeek Harness (检查更新中...)' : 'DeepSeek Harness (checking...)')
-      const result = await autoUpdater.checkForUpdates()
-      if (!result || !result.updateInfo || result.updateInfo.version === app.getVersion()) {
+  if (isPackaged) {
+    // Packaged mode: use electron-updater if available, otherwise show GitHub link
+    if (autoUpdater) {
+      try {
+        if (tray) tray.setToolTip(zhMode ? 'DeepSeek Harness (检查更新中...)' : 'DeepSeek Harness (checking...)')
+        const result = await autoUpdater.checkForUpdates()
+        if (!result || !result.updateInfo || result.updateInfo.version === app.getVersion()) {
+          dialog.showMessageBox(mainWindow || undefined, {
+            type: 'info',
+            title: zhMode ? '已是最新版本' : 'Up to Date',
+            message: zhMode
+              ? `当前版本 ${app.getVersion()} 已是最新。`
+              : `Version ${app.getVersion()} is up to date.`
+          })
+        }
+      } catch (err) {
         dialog.showMessageBox(mainWindow || undefined, {
           type: 'info',
-          title: zhMode ? '已是最新版本' : 'Up to Date',
+          title: zhMode ? '检查更新' : 'Check for Updates',
           message: zhMode
-            ? `当前版本 ${app.getVersion()} 已是最新。`
-            : `Version ${app.getVersion()} is up to date.`
+            ? `自动更新暂不可用（未找到 GitHub Release）。\n\n如需更新，请访问：\nhttps://github.com/KK-Irving/dsh-web-launcher/releases\n\n当前版本：${app.getVersion()}`
+            : `Auto-update unavailable (no GitHub Release found).\n\nVisit:\nhttps://github.com/KK-Irving/dsh-web-launcher/releases\n\nCurrent version: ${app.getVersion()}`
         })
       }
-    } catch (err) {
+      updateTrayMenu()
+    } else {
+      // autoUpdater not initialized (autoUpdate disabled or require failed)
       dialog.showMessageBox(mainWindow || undefined, {
         type: 'info',
         title: zhMode ? '检查更新' : 'Check for Updates',
         message: zhMode
-          ? `自动更新暂不可用（未找到 GitHub Release）。\n\n如需更新，请访问：\nhttps://github.com/KK-Irving/dsh-web-launcher/releases\n\n当前版本：${app.getVersion()}`
-          : `Auto-update unavailable (no GitHub Release found).\n\nVisit:\nhttps://github.com/KK-Irving/dsh-web-launcher/releases\n\nCurrent version: ${app.getVersion()}`
+          ? `如需更新，请访问：\nhttps://github.com/KK-Irving/dsh-web-launcher/releases\n\n当前版本：${app.getVersion()}`
+          : `To update, visit:\nhttps://github.com/KK-Irving/dsh-web-launcher/releases\n\nCurrent version: ${app.getVersion()}`
       })
     }
-    updateTrayMenu()
   } else {
+    // Source mode: git pull
     await checkAndPromptLauncherUpdate()
   }
 }
@@ -960,6 +1095,7 @@ async function checkHarnessUpdate() {
  * Returns { ok, output, error }
  */
 async function updateHarness() {
+  _log('updateHarness started')
   const harnessRoot = resolveHarnessRoot()
   if (!harnessRoot) return { ok: false, error: t('backendNotFound') }
 
@@ -993,6 +1129,7 @@ async function updateHarness() {
 // ── Settings & Extension Manager ─────────────────────────────────────────────
 
 async function checkAndPromptHarnessUpdate() {
+  _log('checkAndPromptHarnessUpdate called')
   const zhMode = t.lang === 'zh'
   if (tray) tray.setToolTip(zhMode ? 'DeepSeek Harness (正在检查更新...)' : 'DeepSeek Harness (checking for updates...)')
 
@@ -1101,6 +1238,7 @@ function showSettings() {
 }
 
 function showExtensionManager() {
+  _log('showExtensionManager called')
   const extensions = store.get('extensions')
   const message = extensions.length === 0
     ? t('extNone')
@@ -1130,6 +1268,7 @@ function showExtensionManager() {
 // ── Global Shortcut ──────────────────────────────────────────────────────────
 
 function registerGlobalShortcut() {
+  _log('registerGlobalShortcut: ' + store.get('globalShortcut'))
   const shortcut = store.get('globalShortcut')
   if (!shortcut) return
 
@@ -1148,10 +1287,10 @@ function registerGlobalShortcut() {
 
 // ── IPC Handlers (Tab Bar Communication) ─────────────────────────────────────
 
-function registerTabIpc() {
-  ipcMain.on('tab-new', () => { createTab('newtab') })
-  ipcMain.on('tab-close', (_event, id) => { closeTab(id || activeTabId) })
-  ipcMain.on('tab-activate', (_event, id) => { activateTab(id) })
+function     registerTabIpc() {
+  ipcMain.on('tab-new', () => { _log('tab-new'); createTab('newtab') })
+  ipcMain.on('tab-close', (_event, id) => { _log('tab-close: ' + (id || activeTabId)); closeTab(id || activeTabId) })
+  ipcMain.on('tab-activate', (_event, id) => { _log('tab-activate: ' + id); activateTab(id) })
   ipcMain.on('tab-reload', (_event, id) => {
     const tab = tabs.find(t => t.id === id)
     if (tab) tab.view.webContents.reload()
@@ -1195,6 +1334,7 @@ function registerTabIpc() {
 
   // ── New Tab Page IPC ─────────────────────────────────────────────────────────
   ipcMain.on('newtab-open-url', (event, inputUrl) => {
+    _log('newtab-open-url: ' + inputUrl)
     // Ensure URL has protocol
     let finalUrl = inputUrl.trim()
     if (!finalUrl) return
@@ -1229,24 +1369,6 @@ function registerTabIpc() {
   })
 
   
-// Detect DSH theme from any DSH BrowserView's color-scheme and sync to newtab
-  dshTab.view.webContents.executeJavaScript(
-    "document.documentElement.style.colorScheme || (document.body.hasAttribute('data-ds-dark-theme') ? 'dark' : 'light')"
-  ).then(scheme => {
-    const theme = (scheme === 'dark') ? 'dark' : 'light'
-    const current = store.get('theme')
-    if (current !== theme) {
-      store.set('theme', theme)
-      // Notify all newtab views
-      tabs.forEach(tb => {
-        if (tb.url === 'newtab' && tb.view && !tb.view.webContents.isDestroyed()) {
-          tb.view.webContents.send('newtab-theme', theme)
-        }
-      })
-    }
-  }).catch(() => {})
-}
-
 
 function notifyNewtabTheme() {
     const { nativeTheme, BrowserView } = require('electron')
@@ -1260,6 +1382,7 @@ function notifyNewtabTheme() {
   }
 
   ipcMain.on('dsh-theme-changed', (event, scheme) => {
+    _log('dsh-theme-changed: ' + scheme)
     const theme = (scheme === 'dark') ? 'dark' : 'light'
     store.set('theme', theme)
     // Sync to all newtab views
@@ -1271,6 +1394,7 @@ function notifyNewtabTheme() {
   })
 
   ipcMain.on('newtab-set-theme', (event, theme) => {
+    _log('newtab-set-theme: ' + theme)
     store.set('theme', theme)
     // Notify all newtab views
     tabs.forEach(tb => {
@@ -1281,10 +1405,12 @@ function notifyNewtabTheme() {
   })
 
   ipcMain.on('newtab-save-bookmarks', (event, bookmarks) => {
+    _log('newtab-save-bookmarks: ' + (bookmarks ? bookmarks.length : 0) + ' items')
     store.set('bookmarks', bookmarks)
   })
 
   ipcMain.on('newtab-action', (event, action) => {
+    _log('newtab-action: ' + action)
     switch (action) {
       case 'new-session': {
         // Navigate current newtab view to DSH instead of creating another tab
@@ -1300,17 +1426,9 @@ function notifyNewtabTheme() {
         break
       }
 
-      case 'open-logs': {
-        const { shell } = require('electron')
-        // Try launcher logs dir first, then harness root
-        const launcherLogs = app.isPackaged
-          ? path.join(path.dirname(app.getPath('exe')), 'logs')
-          : path.resolve(__dirname, '..', '..', '..', 'logs')
-        const harnessLogs = path.join(store.get('harnessRoot') || '', 'logs')
-        const logsDir = fs.existsSync(launcherLogs) ? launcherLogs : (fs.existsSync(harnessLogs) ? harnessLogs : app.getPath('userData'))
-        shell.openPath(logsDir)
+      case 'open-logs':
+        openLogFolder()
         break
-      }
       case 'restart-backend':
         stopBackend()
         setTimeout(() => {
@@ -1352,10 +1470,14 @@ function notifyNewtabTheme() {
     }
   })
   ipcMain.handle('update-launcher', async () => await updateLauncher())
+}
 
 // ── App Lifecycle ────────────────────────────────────────────────────────────
 
+initLogger()
+_log('before requestSingleInstanceLock')
 const gotTheLock = app.requestSingleInstanceLock()
+_log('gotTheLock=' + gotTheLock)
 if (!gotTheLock) {
   app.quit()
 } else {
@@ -1364,14 +1486,19 @@ if (!gotTheLock) {
   })
 
   app.on('ready', async () => {
+    _log('ready event fired')
     // Register IPC for tab bar
     registerTabIpc()
+    _log('registerTabIpc done')
 
     // Load Chrome extensions
     await loadExtensions()
+    _log('loadExtensions done')
 
     // Create tray
+    _log('before createTray')
     createTray()
+    _log('createTray done')
     updateTrayStatus('starting')
 
     // Register global shortcut
@@ -1379,9 +1506,11 @@ if (!gotTheLock) {
 
     // Init auto-updater
     initAutoUpdater()
+    _log('initAutoUpdater done')
 
     // Resolve harness root
     const harnessRoot = resolveHarnessRoot()
+    _log('harnessRoot=' + (harnessRoot || 'NULL'))
 
     if (!harnessRoot) {
       updateTrayStatus('no repo')
@@ -1405,6 +1534,7 @@ if (!gotTheLock) {
     if (alreadyRunning) {
       backendAdopted = true
       updateTrayStatus('running')
+      _log('adopted existing service on port')
       console.log('[dsh-desktop] Adopted existing DSH web service')
       sendSplashStatus({ status: t.lang === 'zh' ? '✓ 已连接到运行中的服务' : '✓ Connected to running service', progress: 100 })
       setTimeout(() => { closeSplashAndShowMain() }, 800)
@@ -1415,6 +1545,7 @@ if (!gotTheLock) {
 
       sendSplashStatus({ phase: 'waiting', lang: t.lang })
       const ready = await waitForReady()
+      _log('waitForReady result: ' + ready)
       if (ready) {
         updateTrayStatus('running')
         sendSplashStatus({ status: t.lang === 'zh' ? '✓ 服务已就绪，正在打开界面...' : '✓ Service ready, opening UI...', progress: 100 })
@@ -1446,6 +1577,7 @@ if (!gotTheLock) {
     if (!isQuitting) {
       // First call: stop everything
       isQuitting = true
+      _log('app before-quit')
     }
     stopHealthMonitor()
     globalShortcut.unregisterAll()
