@@ -1190,12 +1190,30 @@ if (!gotTheLock) {
     }
   })
 
-  app.on('before-quit', () => {
-    isQuitting = true
+  app.on('before-quit', (event) => {
+    if (!isQuitting) {
+      // First call: stop everything
+      isQuitting = true
+    }
     stopHealthMonitor()
     globalShortcut.unregisterAll()
-    if (backendProcess && !backendAdopted) {
+    // Always stop the web backend on exit (whether self-started or adopted)
+    if (backendProcess) {
       stopBackend()
+    } else if (backendAdopted) {
+      // Adopted external service: also kill it by port owner
+      try {
+        const { execSync } = require('child_process')
+        if (process.platform === 'win32') {
+          // Find PID on port and kill tree
+          const result = execSync(`netstat -ano | findstr ":${DEFAULT_PORT}.*LISTENING"`, { windowsHide: true, encoding: 'utf8' })
+          const match = result.match(/LISTENING\s+(\d+)/)
+          if (match) {
+            execSync(`taskkill /PID ${match[1]} /T /F`, { windowsHide: true })
+          }
+        }
+      } catch { /* port may already be free */ }
+      backendAdopted = false
     }
   })
 

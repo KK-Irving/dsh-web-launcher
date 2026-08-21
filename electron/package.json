@@ -6,12 +6,13 @@
   "license": "MIT",
   "main": "src/main/index.js",
   "scripts": {
+    "clean": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\"",
     "start": "electron .",
     "dev": "electron . --dev",
-    "build": "electron-builder",
-    "build:win": "electron-builder --win",
-    "build:portable": "electron-builder --win portable",
-    "pack": "electron-builder --dir"
+    "build": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\" && electron-builder",
+    "build:win": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\" && electron-builder --win",
+    "build:portable": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\" && electron-builder --win portable",
+    "pack": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\" && electron-builder --dir"
   },
   "dependencies": {
     "electron-store": "^8.1.0",
@@ -41,11 +42,15 @@
       "target": [
         {
           "target": "nsis",
-          "arch": ["x64"]
+          "arch": [
+            "x64"
+          ]
         },
         {
           "target": "portable",
-          "arch": ["x64"]
+          "arch": [
+            "x64"
+          ]
         }
       ]
     },
