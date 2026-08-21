@@ -157,18 +157,33 @@ async function waitForReady(timeoutMs = STARTUP_TIMEOUT_MS) {
   return await checkWebReady()
 }
 
-function startBackend(harnessRoot) {
+function resolveRunner(harnessRoot) {
+  const { execSync } = require('child_process')
   const isWin = process.platform === 'win32'
-  const cmd = isWin ? 'cmd.exe' : 'bash'
-  const args = isWin
-    ? ['/d', '/s', '/c', 'pnpm dsh web']
-    : ['-c', 'pnpm dsh web']
+  function commandExists(c) {
+    try { execSync(isWin ? `where ${c}` : `which ${c}`, { windowsHide: true, stdio: 'ignore' }); return true }
+    catch { return false }
+  }
+  if (commandExists('pnpm')) return { cmd: isWin ? 'cmd.exe' : 'bash', args: isWin ? ['/d', '/s', '/c', 'pnpm dsh web'] : ['-c', 'pnpm dsh web'] }
+  if (commandExists('npm')) return { cmd: isWin ? 'cmd.exe' : 'bash', args: isWin ? ['/d', '/s', '/c', 'npm run dsh -- web'] : ['-c', 'npm run dsh -- web'] }
+  if (commandExists('node')) {
+    const binTs = require('path').join(harnessRoot, 'apps', 'cli', 'src', 'bin.ts')
+    if (require('fs').existsSync(binTs)) return { cmd: 'node', args: ['--import', 'tsx/esm', binTs, 'web'] }
+  }
+  return null
+}
 
-  backendProcess = spawn(cmd, args, {
+function startBackend(harnessRoot) {
+  const runner = resolveRunner(harnessRoot)
+  if (!runner) { console.error('[dsh-desktop] No pnpm/npm/node found'); return }
+  console.log(`[dsh-desktop] Starting: ${runner.cmd} ${runner.args.join(' ')}`)
+
+  backendProcess = spawn(runner.cmd, runner.args, {
     cwd: harnessRoot,
     windowsHide: true,
     stdio: 'ignore',
-    detached: false
+    detached: false,
+    env: { ...process.env }
   })
 
   backendProcess.on('exit', (code) => {
@@ -1151,14 +1166,12 @@ if (!gotTheLock) {
         updateTrayStatus('running')
       } else {
         updateTrayStatus('error')
+        const zhFail = t.lang === 'zh'
         dialog.showErrorBox(
           t('backendFailTitle'),
-          'The DSH web backend did not become ready within 90 seconds.\n\n' +
-          'Possible causes:\n' +
-          '  - pnpm not installed or not in PATH\n' +
-          '  - Dependencies not installed (run: pnpm install)\n' +
-          '  - Not built yet (run: pnpm run build)\n\n' +
-          `Harness path: ${harnessRoot}`
+          zhFail
+            ? `DSH Web 后端在 90 秒内未就绪。\n\n可能原因：\n  - pnpm / npm / node 未安装或不在 PATH 中\n  - 首次使用需先在仓库目录执行：\n    pnpm install && pnpm run build\n\n仓库路径：${harnessRoot}`
+            : `DSH web backend not ready within 90s.\n\nPossible causes:\n  - pnpm / npm / node not in PATH\n  - First time? Run: pnpm install && pnpm run build\n\nHarness path: ${harnessRoot}`
         )
       }
     }
