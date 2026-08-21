@@ -1,0 +1,318 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+  <meta charset="UTF-8">
+  <title>新标签页</title>
+  <style>
+    :root {
+      --bg: #0c0c14; --surface: rgba(255,255,255,0.03); --border: rgba(255,255,255,0.06);
+      --text-1: rgba(255,255,255,0.92); --text-2: rgba(255,255,255,0.55); --text-3: rgba(255,255,255,0.3);
+      --accent: #4a9eff; --accent-dim: rgba(74,158,255,0.12);
+      --danger: #f87171; --radius: 10px; --gap: 10px;
+    }
+    html.light {
+      --bg: #f5f5f7; --surface: rgba(0,0,0,0.03); --border: rgba(0,0,0,0.07);
+      --text-1: rgba(0,0,0,0.88); --text-2: rgba(0,0,0,0.55); --text-3: rgba(0,0,0,0.3);
+      --accent: #0071e3; --accent-dim: rgba(0,113,227,0.08); --danger: #dc2626;
+    }
+    @media (prefers-color-scheme: light) {
+      html:not(.dark) {
+        --bg: #f5f5f7; --surface: rgba(0,0,0,0.03); --border: rgba(0,0,0,0.07);
+        --text-1: rgba(0,0,0,0.88); --text-2: rgba(0,0,0,0.55); --text-3: rgba(0,0,0,0.3);
+        --accent: #0071e3; --accent-dim: rgba(0,113,227,0.08); --danger: #dc2626;
+      }
+    }
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      background: var(--bg); color: var(--text-2);
+      min-height: 100vh; display: flex; flex-direction: column; align-items: center;
+      padding: 48px 32px 24px; -webkit-font-smoothing: antialiased;
+      transition: background 0.25s, color 0.25s;
+    }
+    .greeting { font-size: 26px; font-weight: 500; letter-spacing: -0.02em; color: var(--text-1); text-align: center; margin-bottom: 32px; }
+    .url-bar { width: 100%; max-width: 520px; margin-bottom: 40px; position: relative; }
+    .url-bar input {
+      width: 100%; padding: 12px 16px 12px 40px; font-size: 14px; font-family: inherit;
+      background: var(--surface); border: 1px solid var(--border); border-radius: 12px;
+      color: var(--text-1); outline: none; transition: border-color 0.2s;
+    }
+    .url-bar input:focus { border-color: var(--accent); }
+    .url-bar input::placeholder { color: var(--text-3); }
+    .url-bar .ico { position: absolute; left: 14px; top: 50%; transform: translateY(-50%); font-size: 14px; color: var(--text-3); pointer-events: none; }
+
+    .content { width: 100%; max-width: 640px; display: flex; flex-direction: column; gap: 32px; flex: 1; }
+    .section-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
+    .section-label { font-size: 11px; font-weight: 600; color: var(--text-3); text-transform: uppercase; letter-spacing: 0.6px; }
+    .sec-btn { font-size: 11px; color: var(--accent); cursor: pointer; padding: 3px 8px; border-radius: 4px; transition: background 0.12s; }
+    .sec-btn:hover { background: var(--accent-dim); }
+
+    .pill-grid { display: flex; flex-wrap: wrap; gap: var(--gap); }
+    .pill {
+      display: inline-flex; align-items: center; gap: 6px;
+      padding: 8px 14px; font-size: 13px; color: var(--text-2);
+      background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
+      cursor: pointer; transition: background 0.15s, border-color 0.15s, color 0.15s, transform 0.1s;
+      -webkit-user-select: none; user-select: none; position: relative;
+    }
+    .pill:hover { background: rgba(128,128,128,0.08); border-color: rgba(128,128,128,0.15); color: var(--text-1); transform: translateY(-1px); }
+    .pill:active { transform: scale(0.97); }
+    .pill.accent { background: var(--accent-dim); border-color: rgba(74,158,255,0.25); color: var(--accent); }
+    .pill.accent:hover { background: rgba(74,158,255,0.18); color: var(--text-1); }
+    .pill .pi { font-size: 14px; line-height: 1; }
+
+    /* Inline edit: delete badge on pills */
+    .pill .x-badge {
+      display: none; position: absolute; top: -5px; right: -5px;
+      width: 15px; height: 15px; border-radius: 50%; background: var(--danger);
+      color: #fff; font-size: 9px; line-height: 15px; text-align: center;
+      cursor: pointer; font-weight: bold;
+    }
+    .editing .pill .x-badge { display: block; }
+    .editing .pill:hover { transform: none; }
+    /* Add button in edit mode */
+    .pill.add-pill { border-style: dashed; color: var(--accent); display: none; }
+    .editing .pill.add-pill { display: inline-flex; }
+
+    .info-list { display: flex; flex-wrap: wrap; gap: var(--gap); }
+    .info-pill {
+      display: inline-flex; align-items: center; gap: 6px;
+      padding: 7px 13px; font-size: 12px;
+      background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
+    }
+    .info-pill .dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; background: var(--text-3); }
+    .info-pill .dot.green { background: #34d399; }
+    .info-pill .dot.yellow { background: #fbbf24; }
+    .info-pill .dot.red { background: #f87171; }
+    .info-pill .il { color: var(--text-3); }
+    .info-pill .iv { color: var(--text-2); font-family: 'SF Mono','Cascadia Code',Consolas,monospace; font-size: 11px; }
+
+    .shortcut-row { display: flex; align-items: center; justify-content: space-between; padding: 6px 0; font-size: 12px; border-bottom: 1px solid var(--border); }
+    .shortcut-row:last-child { border-bottom: none; }
+    .shortcut-row .sk-label { color: var(--text-3); }
+    .shortcut-row kbd { font-family: 'SF Mono','Cascadia Code',Consolas,monospace; font-size: 10px; color: var(--text-2); background: var(--surface); border: 1px solid var(--border); border-radius: 4px; padding: 2px 6px; }
+
+    .tip { font-size: 12px; color: var(--text-3); padding: 10px 0; border-top: 1px solid var(--border); display: flex; align-items: flex-start; gap: 8px; }
+    .tip .ti { font-size: 14px; line-height: 1.2; }
+    .footer { margin-top: auto; padding-top: 20px; font-size: 10px; color: var(--text-3); opacity: 0.6; display: flex; gap: 16px; align-items: center; }
+    .theme-toggle { cursor: pointer; padding: 2px 6px; border-radius: 4px; transition: background 0.12s; }
+    .theme-toggle:hover { background: var(--accent-dim); color: var(--accent); }
+
+    /* Quick add bar (inline, appears in edit mode below sites) */
+    .inline-add { display: none; margin-top: 8px; gap: 6px; align-items: center; }
+    .editing .inline-add { display: flex; }
+    .inline-add input {
+      padding: 6px 10px; font-size: 12px; background: var(--surface); border: 1px solid var(--border);
+      border-radius: 6px; color: var(--text-1); outline: none; flex: 1;
+    }
+    .inline-add input:focus { border-color: var(--accent); }
+    .inline-add button {
+      padding: 6px 12px; font-size: 11px; background: var(--accent); color: #fff;
+      border: none; border-radius: 6px; cursor: pointer; white-space: nowrap;
+    }
+    .inline-add button:hover { opacity: 0.85; }
+
+    @media (prefers-reduced-motion: reduce) { .pill, .pill:hover, .pill:active { transform: none; transition: none; } body { transition: none; } }
+  </style>
+</head>
+<body>
+  <div class="greeting" id="greeting"></div>
+  <div class="url-bar"><span class="ico">&#x1F310;</span><input type="text" id="urlInput" placeholder="输入网址，回车打开" autocomplete="off" spellcheck="false" /></div>
+
+  <div class="content">
+    <div>
+      <div class="section-header"><span class="section-label" data-i18n="secActions">快捷操作</span></div>
+      <div class="pill-grid">
+        <div class="pill accent" onclick="doAction('new-session')"><span class="pi">&#x1F4AC;</span><span data-i18n="newSession">新建会话</span></div>
+        <div class="pill" onclick="doAction('restart-backend')"><span class="pi">&#x21BB;</span><span data-i18n="restart">重启服务</span></div>
+        <div class="pill" onclick="doAction('open-logs')"><span class="pi">&#x1F4C4;</span><span data-i18n="logs">日志</span></div>
+        <div class="pill" onclick="doAction('check-harness-update')"><span class="pi">&#x2B06;</span><span data-i18n="checkHarness">Harness 更新</span></div>
+        <div class="pill" onclick="doAction('check-update')"><span class="pi">&#x2B06;</span><span data-i18n="checkUpdate">客户端更新</span></div>
+        <div class="pill" onclick="doAction('load-extension')"><span class="pi">&#x1F9E9;</span><span data-i18n="loadExt">加载扩展</span></div>
+        <div class="pill" onclick="doAction('manage-extensions')"><span class="pi">&#x2699;</span><span data-i18n="manageExt">管理扩展</span></div>
+      </div>
+    </div>
+
+    <div id="sitesSection">
+      <div class="section-header">
+        <span class="section-label" data-i18n="secSites">常用网站</span>
+        <span class="sec-btn" id="editBtn">编辑</span>
+      </div>
+      <div class="pill-grid" id="sitesGrid"></div>
+      <div class="inline-add" id="inlineAdd">
+        <input id="addName" placeholder="名称" />
+        <input id="addUrl" placeholder="https://..." />
+        <button id="addBtn">添加</button>
+      </div>
+    </div>
+
+    <div>
+      <div class="section-header"><span class="section-label" data-i18n="secShortcuts">快捷键</span></div>
+      <div class="shortcut-row"><span class="sk-label" data-i18n="skNewTab">新建标签页</span><kbd>Ctrl + T</kbd></div>
+      <div class="shortcut-row"><span class="sk-label" data-i18n="skCloseTab">关闭标签页</span><kbd>Ctrl + W</kbd></div>
+      <div class="shortcut-row"><span class="sk-label" data-i18n="skToggle">显示 / 隐藏窗口</span><kbd>Alt + D</kbd></div>
+      <div class="shortcut-row"><span class="sk-label" data-i18n="skRefresh">刷新页面</span><kbd>Ctrl + R</kbd></div>
+      <div class="shortcut-row"><span class="sk-label" data-i18n="skDevTools">开发者工具</span><kbd>F12</kbd></div>
+    </div>
+
+    <div>
+      <div class="section-header"><span class="section-label" data-i18n="secStatus">系统状态</span></div>
+      <div class="info-list">
+        <div class="info-pill"><span class="dot" id="backendDot"></span><span class="il" data-i18n="backend">后端</span><span class="iv" id="backendStatus">--</span></div>
+        <div class="info-pill"><span class="dot green"></span><span class="il" data-i18n="clientVer">版本</span><span class="iv" id="clientVersion">--</span></div>
+        <div class="info-pill"><span class="dot" id="portDot"></span><span class="il" data-i18n="servicePort">端口</span><span class="iv" id="portValue">--</span></div>
+        <div class="info-pill"><span class="dot green"></span><span class="il" data-i18n="harnessPath">仓库</span><span class="iv" id="harnessPath" title="">--</span></div>
+      </div>
+    </div>
+
+    <div class="tip"><span class="ti">&#x1F4A1;</span><span id="tipText"></span></div>
+  </div>
+
+  <div class="footer">
+    <span>DeepSeek Harness Desktop</span>
+    <span class="theme-toggle" id="themeBtn" title="切换主题">&#x1F313;</span>
+  </div>
+
+  <script>
+    const { ipcRenderer } = require('electron');
+
+    const defaultBookmarks = [
+      { name:'GitHub', url:'https://github.com', icon:'💻' },
+      { name:'Google', url:'https://google.com', icon:'🔍' },
+      { name:'Stack Overflow', url:'https://stackoverflow.com', icon:'📚' },
+      { name:'DeepSeek Chat', url:'https://chat.deepseek.com', icon:'🤖' },
+      { name:'MDN', url:'https://developer.mozilla.org', icon:'📖' },
+      { name:'npm', url:'https://npmjs.com', icon:'📦' },
+      { name:'Bing', url:'https://cn.bing.com', icon:'🌊' },
+    ];
+
+    let bookmarks = [...defaultBookmarks];
+    let editing = false;
+    let lang = 'zh';
+    let currentTheme = 'system';
+
+    const S = {
+      zh: {
+        secActions:'快捷操作', secSites:'常用网站', secShortcuts:'快捷键', secStatus:'系统状态',
+        newSession:'新建会话', logs:'日志', restart:'重启服务',
+        checkHarness:'Harness 更新', checkUpdate:'客户端更新', loadExt:'加载扩展', manageExt:'管理扩展',
+        skNewTab:'新建标签页', skCloseTab:'关闭标签页', skToggle:'显示 / 隐藏窗口', skRefresh:'刷新页面', skDevTools:'开发者工具',
+        backend:'后端', clientVer:'版本', servicePort:'端口', harnessPath:'仓库',
+        running:'运行中', stopped:'已停止', starting:'启动中',
+        morning:'早上好', afternoon:'下午好', evening:'晚上好', night:'夜深了',
+        placeholder:'输入网址，回车打开', edit:'编辑', done:'完成', add:'添加',
+        addNamePh:'名称', addUrlPh:'https://...',
+      },
+      en: {
+        secActions:'ACTIONS', secSites:'SITES', secShortcuts:'SHORTCUTS', secStatus:'STATUS',
+        newSession:'New Session', logs:'Logs', restart:'Restart',
+        checkHarness:'Harness Update', checkUpdate:'Client Update', loadExt:'Load Extension', manageExt:'Manage',
+        skNewTab:'New Tab', skCloseTab:'Close Tab', skToggle:'Toggle Window', skRefresh:'Refresh', skDevTools:'Dev Tools',
+        backend:'Backend', clientVer:'Version', servicePort:'Port', harnessPath:'Repo',
+        running:'Running', stopped:'Stopped', starting:'Starting',
+        morning:'Good morning', afternoon:'Good afternoon', evening:'Good evening', night:'Late night',
+        placeholder:'Enter URL, press Enter', edit:'Edit', done:'Done', add:'Add',
+        addNamePh:'Name', addUrlPh:'https://...',
+      }
+    };
+    const tips = {
+      zh:['地址栏输入任意网址即可在客户端内浏览','Alt+D 随时切换窗口显示','中键点击标签可快速关闭','退出时后端服务自动停止','支持加载 Chrome 扩展','首次启动较慢，后续启动很快','后端无响应可点击重启服务','关闭窗口只是最小化到托盘','标签页重启后自动恢复','底部 🌓 可切换深浅主题'],
+      en:['Type any URL above to browse in client','Alt+D toggles window','Middle-click tab to close','Backend stops on exit','Chrome extensions supported','First launch is slow, restarts fast','Try Restart if unresponsive','Close minimizes to tray','Tabs restore on restart','Use 🌓 below to toggle theme']
+    };
+
+    // Theme
+    function applyTheme(t) {
+      currentTheme = t;
+      const html = document.documentElement;
+      html.classList.remove('light', 'dark');
+      if (t === 'light') html.classList.add('light');
+      else if (t === 'dark') html.classList.add('dark');
+      // 'system' relies on @media prefers-color-scheme
+    }
+    function cycleTheme() {
+      const order = ['system','dark','light'];
+      const next = order[(order.indexOf(currentTheme) + 1) % 3];
+      applyTheme(next);
+      ipcRenderer.send('newtab-set-theme', next);
+    }
+
+    // Render
+    function render() {
+      const s = S[lang];
+      document.querySelectorAll('[data-i18n]').forEach(el => { const k=el.dataset.i18n; if(s[k]) el.textContent=s[k]; });
+      document.getElementById('urlInput').placeholder = s.placeholder;
+      document.getElementById('editBtn').textContent = editing ? s.done : s.edit;
+      document.getElementById('addBtn').textContent = s.add;
+      document.getElementById('addName').placeholder = s.addNamePh;
+      document.getElementById('addUrl').placeholder = s.addUrlPh;
+      const h = new Date().getHours();
+      document.getElementById('greeting').textContent = h>=6&&h<12?s.morning:h<18?s.afternoon:h<23?s.evening:s.night;
+      document.getElementById('tipText').textContent = tips[lang][Math.floor(Math.random()*tips[lang].length)];
+      renderSites();
+    }
+
+    function renderSites() {
+      const grid = document.getElementById('sitesGrid');
+      grid.innerHTML = bookmarks.map((b, i) =>
+        `<div class="pill" onclick="if(!editing)openUrl('${b.url.replace(/'/g,"\\'")}')">` +
+        `<span class="pi">${b.icon||'🔗'}</span>${b.name}` +
+        `<span class="x-badge" onclick="event.stopPropagation();removeSite(${i})">&#x2715;</span>` +
+        `</div>`
+      ).join('');
+      document.getElementById('sitesSection').classList.toggle('editing', editing);
+    }
+
+    function toggleEdit() {
+      editing = !editing;
+      const s = S[lang];
+      document.getElementById('editBtn').textContent = editing ? s.done : s.edit;
+      renderSites();
+      if (!editing) {
+        // Save on exit edit mode
+        ipcRenderer.send('newtab-save-bookmarks', bookmarks);
+      }
+    }
+    function removeSite(i) {
+      bookmarks.splice(i, 1);
+      renderSites();
+    }
+    function addSite() {
+      const name = document.getElementById('addName').value.trim();
+      const url = document.getElementById('addUrl').value.trim();
+      if (!name || !url) return;
+      bookmarks.push({ name, url, icon: '🔗' });
+      document.getElementById('addName').value = '';
+      document.getElementById('addUrl').value = '';
+      renderSites();
+    }
+
+    document.getElementById('editBtn').addEventListener('click', toggleEdit);
+    document.getElementById('addBtn').addEventListener('click', addSite);
+    document.getElementById('addUrl').addEventListener('keydown', e => { if (e.key === 'Enter') addSite(); });
+    document.getElementById('themeBtn').addEventListener('click', cycleTheme);
+
+    function doAction(a) { ipcRenderer.send('newtab-action', a); }
+    function openUrl(u) { if(!editing) ipcRenderer.send('newtab-open-url', u); }
+    document.getElementById('urlInput').addEventListener('keydown', e => { if(e.key==='Enter'){const v=e.target.value.trim();if(v)ipcRenderer.send('newtab-open-url',v)} });
+
+    ipcRenderer.on('newtab-info', (_, d) => {
+      if (d.lang) { lang = d.lang; render(); }
+      if (d.theme) applyTheme(d.theme);
+      if (d.bookmarks && d.bookmarks.length) { bookmarks = d.bookmarks; renderSites(); }
+      if (d.version) document.getElementById('clientVersion').textContent = 'v' + d.version;
+      if (d.port) { document.getElementById('portValue').textContent = ':' + d.port; document.getElementById('portDot').classList.add('green'); }
+      if (d.harnessRoot) { const el=document.getElementById('harnessPath'); const p=d.harnessRoot.replace(/\\\\/g,'/').split('/'); el.textContent=p.slice(-2).join('/'); el.title=d.harnessRoot; }
+      if (d.backendStatus) {
+        const dot=document.getElementById('backendDot'), val=document.getElementById('backendStatus'), s=S[lang];
+        dot.className='dot '+(d.backendStatus==='running'?'green':d.backendStatus==='starting'?'yellow':'red');
+        val.textContent=s[d.backendStatus]||s.stopped;
+      }
+    });
+    ipcRenderer.on('newtab-theme', (_, theme) => applyTheme(theme));
+
+    render();
+    ipcRenderer.send('newtab-ready');
+    setTimeout(() => document.getElementById('urlInput').focus(), 80);
+  </script>
+</body>
+</html>

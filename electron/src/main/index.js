@@ -33,6 +33,8 @@ const store = new Store({
     windowBounds: { width: 1280, height: 860 },
     tabs: [], // persisted tab URLs for restore
     language: 'zh', // 'zh' | 'en'
+    theme: 'system', // 'system' | 'dark' | 'light'
+    bookmarks: null, // user-editable bookmarks array
     extensions: [] // Chrome extension paths (unpacked directories)
   }
 })
@@ -43,7 +45,7 @@ const DEFAULT_PORT = store.get('port')
 const DEFAULT_HOST = store.get('host')
 const WEB_URL = `http://${DEFAULT_HOST}:${DEFAULT_PORT}`
 const DSH_BOOT_MARKER = '__DSH_BOOT__'
-const STARTUP_TIMEOUT_MS = 90_000
+const STARTUP_TIMEOUT_MS = 180_000
 const HEALTH_CHECK_INTERVAL_MS = 30_000
 
 // ── State ────────────────────────────────────────────────────────────────────
@@ -164,11 +166,11 @@ function resolveRunner(harnessRoot) {
     try { execSync(isWin ? `where ${c}` : `which ${c}`, { windowsHide: true, stdio: 'ignore' }); return true }
     catch { return false }
   }
-  if (commandExists('pnpm')) return { cmd: isWin ? 'cmd.exe' : 'bash', args: isWin ? ['/d', '/s', '/c', 'pnpm dsh web'] : ['-c', 'pnpm dsh web'] }
-  if (commandExists('npm')) return { cmd: isWin ? 'cmd.exe' : 'bash', args: isWin ? ['/d', '/s', '/c', 'npm run dsh -- web'] : ['-c', 'npm run dsh -- web'] }
+  if (commandExists('pnpm')) return { cmd: isWin ? 'cmd.exe' : 'bash', args: isWin ? ['/d', '/s', '/c', 'pnpm dsh web --no-open'] : ['-c', 'pnpm dsh web'] }
+  if (commandExists('npm')) return { cmd: isWin ? 'cmd.exe' : 'bash', args: isWin ? ['/d', '/s', '/c', 'npm run dsh -- web --no-open'] : ['-c', 'npm run dsh -- web'] }
   if (commandExists('node')) {
     const binTs = require('path').join(harnessRoot, 'apps', 'cli', 'src', 'bin.ts')
-    if (require('fs').existsSync(binTs)) return { cmd: 'node', args: ['--import', 'tsx/esm', binTs, 'web'] }
+    if (require('fs').existsSync(binTs)) return { cmd: 'node', args: ['--import', 'tsx/esm', binTs, 'web', '--no-open'] }
   }
   return null
 }
@@ -247,6 +249,24 @@ function generateTabId() {
 function createTab(url = WEB_URL) {
   if (!mainWindow) return null
 
+  // New tab page: load local HTML instead of remote URL
+  if (url === 'newtab') {
+    const id = generateTabId()
+    const view = new BrowserView({
+      webPreferences: {
+        nodeIntegration: true,
+        contextIsolation: false
+      }
+    })
+    view.webContents.loadFile(path.join(__dirname, '..', 'assets', 'newtab.html'))
+    const tab = { id, view, title: t.lang === 'zh' ? '新标签页' : 'New Tab', url: 'newtab' }
+    tabs.push(tab)
+    activateTab(id)
+    notifyTabBar()
+    persistTabs()
+    return tab
+  }
+
   const id = generateTabId()
   const view = new BrowserView({
     webPreferences: {
@@ -270,6 +290,32 @@ function createTab(url = WEB_URL) {
       tab.url = navUrl
       persistTabs()
     }
+  })
+
+  // Watch for DSH theme changes via injected MutationObserver
+  view.webContents.on('dom-ready', () => {
+    view.webContents.executeJavaScript(`
+      (function() {
+        if (window.__dshThemeObserver) return;
+        const { ipcRenderer } = require('electron');
+        function reportTheme() {
+          const scheme = document.documentElement.style.colorScheme || 
+            (document.body && document.body.hasAttribute('data-ds-dark-theme') ? 'dark' : 'light');
+          ipcRenderer.send('dsh-theme-changed', scheme);
+        }
+        const observer = new MutationObserver(reportTheme);
+        observer.observe(document.documentElement, { attributes: true, attributeFilter: ['style'] });
+        if (document.body) {
+          observer.observe(document.body, { attributes: true, attributeFilter: ['data-ds-dark-theme'] });
+        } else {
+          document.addEventListener('DOMContentLoaded', () => {
+            observer.observe(document.body, { attributes: true, attributeFilter: ['data-ds-dark-theme'] });
+          });
+        }
+        window.__dshThemeObserver = observer;
+        reportTheme();
+      })()
+    `).catch(() => {})
   })
 
   // Open external links in system browser
@@ -506,6 +552,47 @@ function initAutoUpdater() {
 }
 
 // ── Window Management ────────────────────────────────────────────────────────
+
+
+// ── Splash Window ────────────────────────────────────────────────────────────
+
+let splashWindow = null
+
+function createSplashWindow() {
+  const { BrowserWindow } = require('electron')
+  splashWindow = new BrowserWindow({
+    width: 500,
+    height: 350,
+    frame: false,
+    transparent: false,
+    resizable: false,
+    alwaysOnTop: true,
+    center: true,
+    show: true,
+    backgroundColor: '#1a1a2e',
+    webPreferences: {
+      nodeIntegration: true,
+      contextIsolation: false
+    }
+  })
+  splashWindow.loadFile(path.join(__dirname, '..', 'assets', 'splash.html'))
+  splashWindow.on('closed', () => { splashWindow = null })
+}
+
+function sendSplashStatus(data) {
+  if (splashWindow && !splashWindow.isDestroyed()) {
+    data.version = app.getVersion()
+    splashWindow.webContents.send('splash-status', data)
+  }
+}
+
+function closeSplashAndShowMain() {
+  if (splashWindow && !splashWindow.isDestroyed()) {
+    splashWindow.close()
+    splashWindow = null
+  }
+  createMainWindow()
+}
 
 function createMainWindow() {
   // Remove default menu bar (File/Edit/View/Window/Help)
@@ -1062,7 +1149,7 @@ function registerGlobalShortcut() {
 // ── IPC Handlers (Tab Bar Communication) ─────────────────────────────────────
 
 function registerTabIpc() {
-  ipcMain.on('tab-new', () => { createTab() })
+  ipcMain.on('tab-new', () => { createTab('newtab') })
   ipcMain.on('tab-close', (_event, id) => { closeTab(id || activeTabId) })
   ipcMain.on('tab-activate', (_event, id) => { activateTab(id) })
   ipcMain.on('tab-reload', (_event, id) => {
@@ -1104,8 +1191,167 @@ function registerTabIpc() {
   ipcMain.handle('check-harness-update', async () => await checkHarnessUpdate())
   ipcMain.handle('update-harness', async () => await updateHarness())
   ipcMain.handle('check-launcher-update', async () => await checkLauncherUpdate())
-  ipcMain.handle('update-launcher', async () => await updateLauncher())
+  ipcMain.on('splash-ready', () => { sendSplashStatus({ version: app.getVersion(), lang: t.lang, phase: 'starting' }) })
+
+  // ── New Tab Page IPC ─────────────────────────────────────────────────────────
+  ipcMain.on('newtab-open-url', (event, inputUrl) => {
+    // Ensure URL has protocol
+    let finalUrl = inputUrl.trim()
+    if (!finalUrl) return
+    if (!/^https?:\/\//i.test(finalUrl)) finalUrl = 'https://' + finalUrl
+
+    // Navigate current newtab to the URL
+    const currentTab = tabs.find(tb => tb.id === activeTabId)
+    if (currentTab && currentTab.url === 'newtab') {
+      currentTab.view.webContents.loadURL(finalUrl)
+      currentTab.url = finalUrl
+      currentTab.title = finalUrl.replace(/^https?:\/\//, '').split('/')[0]
+      notifyTabBar()
+    } else {
+      createTab(finalUrl)
+    }
+  })
+
+  ipcMain.on('newtab-ready', (event) => {
+    const { nativeTheme } = require('electron')
+    event.sender.send('newtab-info', {
+      lang: t.lang,
+      version: app.getVersion(),
+      port: DEFAULT_PORT,
+      harnessRoot: store.get('harnessRoot') || '',
+      backendStatus: backendProcess ? 'running' : (backendAdopted ? 'running' : 'stopped'),
+      theme: store.get('theme') || 'system',
+      bookmarks: store.get('bookmarks') || null
+    })
+    // Listen for theme changes and notify
+    nativeTheme.off('updated', notifyNewtabTheme)
+    nativeTheme.on('updated', notifyNewtabTheme)
+  })
+
+  
+// Detect DSH theme from any DSH BrowserView's color-scheme and sync to newtab
+  dshTab.view.webContents.executeJavaScript(
+    "document.documentElement.style.colorScheme || (document.body.hasAttribute('data-ds-dark-theme') ? 'dark' : 'light')"
+  ).then(scheme => {
+    const theme = (scheme === 'dark') ? 'dark' : 'light'
+    const current = store.get('theme')
+    if (current !== theme) {
+      store.set('theme', theme)
+      // Notify all newtab views
+      tabs.forEach(tb => {
+        if (tb.url === 'newtab' && tb.view && !tb.view.webContents.isDestroyed()) {
+          tb.view.webContents.send('newtab-theme', theme)
+        }
+      })
+    }
+  }).catch(() => {})
 }
+
+
+function notifyNewtabTheme() {
+    const { nativeTheme, BrowserView } = require('electron')
+    const theme = nativeTheme.shouldUseDarkColors ? 'dark' : 'light'
+    // Notify all newtab views
+    tabs.forEach(tb => {
+      if (tb.url === 'newtab' && tb.view && !tb.view.webContents.isDestroyed()) {
+        tb.view.webContents.send('newtab-theme', theme)
+      }
+    })
+  }
+
+  ipcMain.on('dsh-theme-changed', (event, scheme) => {
+    const theme = (scheme === 'dark') ? 'dark' : 'light'
+    store.set('theme', theme)
+    // Sync to all newtab views
+    tabs.forEach(tb => {
+      if (tb.url === 'newtab' && tb.view && !tb.view.webContents.isDestroyed()) {
+        tb.view.webContents.send('newtab-theme', theme)
+      }
+    })
+  })
+
+  ipcMain.on('newtab-set-theme', (event, theme) => {
+    store.set('theme', theme)
+    // Notify all newtab views
+    tabs.forEach(tb => {
+      if (tb.url === 'newtab' && tb.view && !tb.view.webContents.isDestroyed()) {
+        tb.view.webContents.send('newtab-theme', theme)
+      }
+    })
+  })
+
+  ipcMain.on('newtab-save-bookmarks', (event, bookmarks) => {
+    store.set('bookmarks', bookmarks)
+  })
+
+  ipcMain.on('newtab-action', (event, action) => {
+    switch (action) {
+      case 'new-session': {
+        // Navigate current newtab view to DSH instead of creating another tab
+        const currentTab = tabs.find(tb => tb.id === activeTabId)
+        if (currentTab && currentTab.url === 'newtab') {
+          currentTab.view.webContents.loadURL(`http://127.0.0.1:${DEFAULT_PORT}`)
+          currentTab.url = `http://127.0.0.1:${DEFAULT_PORT}`
+          currentTab.title = 'DeepSeek Harness'
+          notifyTabBar()
+        } else {
+          createTab(`http://127.0.0.1:${DEFAULT_PORT}`)
+        }
+        break
+      }
+
+      case 'open-logs': {
+        const { shell } = require('electron')
+        // Try launcher logs dir first, then harness root
+        const launcherLogs = app.isPackaged
+          ? path.join(path.dirname(app.getPath('exe')), 'logs')
+          : path.resolve(__dirname, '..', '..', '..', 'logs')
+        const harnessLogs = path.join(store.get('harnessRoot') || '', 'logs')
+        const logsDir = fs.existsSync(launcherLogs) ? launcherLogs : (fs.existsSync(harnessLogs) ? harnessLogs : app.getPath('userData'))
+        shell.openPath(logsDir)
+        break
+      }
+      case 'restart-backend':
+        stopBackend()
+        setTimeout(() => {
+          const root = store.get('harnessRoot')
+          if (root) startBackend(root)
+        }, 1000)
+        break
+      case 'check-harness-update':
+        checkAndPromptHarnessUpdate()
+        break
+      case 'check-update':
+        checkForAllUpdates()
+        break
+      case 'load-extension': {
+        const { dialog: dlg } = require('electron')
+        dlg.showOpenDialog(mainWindow, {
+          properties: ['openDirectory'],
+          title: t.lang === 'zh' ? '选择 Chrome 扩展目录' : 'Select Chrome Extension Directory'
+        }).then(({ filePaths }) => {
+          if (filePaths && filePaths.length > 0) {
+            addExtension(filePaths[0])
+          }
+        })
+        break
+      }
+      case 'manage-extensions':
+        // Open extensions info dialog
+        const zhMode = t.lang === 'zh'
+        const exts = store.get('chromeExtensions') || []
+        require('electron').dialog.showMessageBox(mainWindow || undefined, {
+          type: 'info',
+          title: zhMode ? '已加载的扩展' : 'Loaded Extensions',
+          message: exts.length > 0
+            ? exts.map((e, i) => `${i+1}. ${e.split(/[/\\]/).pop()}`).join('\n')
+            : (zhMode ? '暂无已加载的扩展' : 'No extensions loaded'),
+          buttons: ['OK']
+        })
+        break
+    }
+  })
+  ipcMain.handle('update-launcher', async () => await updateLauncher())
 
 // ── App Lifecycle ────────────────────────────────────────────────────────────
 
@@ -1150,6 +1396,9 @@ if (!gotTheLock) {
     store.set('harnessRoot', harnessRoot)
     console.log(`[dsh-desktop] Harness root: ${harnessRoot}`)
 
+    // Create splash window immediately for user feedback
+    createSplashWindow()
+
     // Check if service is already running
     const alreadyRunning = await checkWebReady()
 
@@ -1157,27 +1406,30 @@ if (!gotTheLock) {
       backendAdopted = true
       updateTrayStatus('running')
       console.log('[dsh-desktop] Adopted existing DSH web service')
+      sendSplashStatus({ status: t.lang === 'zh' ? '✓ 已连接到运行中的服务' : '✓ Connected to running service', progress: 100 })
+      setTimeout(() => { closeSplashAndShowMain() }, 800)
     } else if (store.get('autoStartBackend')) {
+      sendSplashStatus({ phase: 'starting', lang: t.lang })
       startBackend(harnessRoot)
       updateTrayStatus('starting')
 
+      sendSplashStatus({ phase: 'waiting', lang: t.lang })
       const ready = await waitForReady()
       if (ready) {
         updateTrayStatus('running')
+        sendSplashStatus({ status: t.lang === 'zh' ? '✓ 服务已就绪，正在打开界面...' : '✓ Service ready, opening UI...', progress: 100 })
+        setTimeout(() => { closeSplashAndShowMain() }, 500)
       } else {
-        updateTrayStatus('error')
-        const zhFail = t.lang === 'zh'
-        dialog.showErrorBox(
-          t('backendFailTitle'),
-          zhFail
-            ? `DSH Web 后端在 90 秒内未就绪。\n\n可能原因：\n  - pnpm / npm / node 未安装或不在 PATH 中\n  - 首次使用需先在仓库目录执行：\n    pnpm install && pnpm run build\n\n仓库路径：${harnessRoot}`
-            : `DSH web backend not ready within 90s.\n\nPossible causes:\n  - pnpm / npm / node not in PATH\n  - First time? Run: pnpm install && pnpm run build\n\nHarness path: ${harnessRoot}`
-        )
+        updateTrayStatus('starting')
+        sendSplashStatus({ phase: 'slow', lang: t.lang })
+        // Don't block — open main window anyway, backend may come up later
+        setTimeout(() => { closeSplashAndShowMain() }, 2000)
       }
+    } else {
+      // Auto-start disabled — just open the window
+      sendSplashStatus({ status: t.lang === 'zh' ? '手动模式：请自行启动后端' : 'Manual mode: start backend yourself', progress: 100 })
+      setTimeout(() => { closeSplashAndShowMain() }, 1000)
     }
-
-    // Create main window
-    createMainWindow()
 
     // Start health monitor
     startHealthMonitor()

@@ -1,6 +1,6 @@
 # DeepSeek Harness Web Launcher
 
-> **v2.0.2** — Now includes an [Electron desktop client](#electron-desktop-client) with multi-tab, Chrome extensions, and auto-update.
+> **v2.0.3** — Now includes an [Electron desktop client](#electron-desktop-client) with multi-tab, Chrome extensions, and auto-update.
 
 One-click Windows launcher for the [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) Web UI. Two modes available:
 

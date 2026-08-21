@@ -1,0 +1,263 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+  <meta charset="UTF-8">
+  <title>DeepSeek Harness</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: #1a1a2e;
+      color: #e0e0e0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      height: 100vh;
+      overflow: hidden;
+    }
+    .container {
+      text-align: center;
+      max-width: 480px;
+      padding: 40px;
+    }
+    .logo {
+      font-size: 48px;
+      margin-bottom: 24px;
+      animation: float 3s ease-in-out infinite;
+    }
+    @keyframes float {
+      0%, 100% { transform: translateY(0); }
+      50% { transform: translateY(-6px); }
+    }
+    .title {
+      font-size: 22px;
+      font-weight: 600;
+      margin-bottom: 8px;
+      color: #ffffff;
+    }
+    .subtitle {
+      font-size: 14px;
+      color: #8888aa;
+      margin-bottom: 32px;
+    }
+    .progress-container {
+      width: 100%;
+      height: 6px;
+      background: #2a2a4e;
+      border-radius: 3px;
+      overflow: hidden;
+      margin-bottom: 16px;
+    }
+    .progress-bar {
+      height: 100%;
+      background: linear-gradient(90deg, #4a9eff, #7c3aed);
+      border-radius: 3px;
+      width: 0%;
+      transition: width 0.5s ease;
+    }
+    .progress-bar.indeterminate {
+      width: 30%;
+      animation: indeterminate 1.5s ease-in-out infinite;
+    }
+    @keyframes indeterminate {
+      0% { transform: translateX(-100%); }
+      100% { transform: translateX(400%); }
+    }
+    .status {
+      font-size: 13px;
+      color: #9999bb;
+      min-height: 20px;
+      transition: opacity 0.3s ease;
+    }
+    .status.fade {
+      opacity: 0;
+    }
+    .status.error {
+      color: #ff6b6b;
+    }
+    .status.success {
+      color: #4ade80;
+    }
+    .version {
+      position: fixed;
+      bottom: 16px;
+      right: 20px;
+      font-size: 11px;
+      color: #555577;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="logo">&#x1F433;</div>
+    <div class="title">DeepSeek Harness</div>
+    <div class="subtitle" id="subtitle">Desktop Client</div>
+    <div class="progress-container">
+      <div class="progress-bar indeterminate" id="progressBar"></div>
+    </div>
+    <div class="status" id="status">正在准备环境...</div>
+  </div>
+  <div class="version" id="version"></div>
+  <script>
+    const { ipcRenderer } = require('electron');
+
+    // Random rotating tips per phase
+    const tips = {
+      starting: [
+        '正在启动后端服务...',
+        '初始化运行环境...',
+        '加载核心模块中...',
+        '准备 Web 服务引擎...',
+        '唤醒 DeepSeek 中...',
+        '正在连接本地服务...',
+        '启动中，请稍候...',
+      ],
+      waiting: [
+        '等待服务就绪...',
+        '后端正在编译资源...',
+        '服务即将准备完毕...',
+        '正在加载插件系统...',
+        '初始化 WebSocket 通道...',
+        '还在努力加载中...',
+        '马上就好，请耐心等待...',
+        '正在预热缓存...',
+        '建立服务连接中...',
+        '资源加载进行中...',
+      ],
+      slow: [
+        '启动时间比预期稍长，请耐心等待...',
+        '首次启动可能需要额外时间...',
+        '后端仍在初始化，不要关闭窗口...',
+        '正在处理较大的编译任务...',
+        '即将完成，感谢您的耐心...',
+        '服务正在全力启动中...',
+        '别担心，一切正常运行...',
+      ]
+    };
+
+    const tipsEn = {
+      starting: [
+        'Starting backend service...',
+        'Initializing runtime environment...',
+        'Loading core modules...',
+        'Preparing web service engine...',
+        'Waking up DeepSeek...',
+        'Connecting to local service...',
+        'Starting up, please wait...',
+      ],
+      waiting: [
+        'Waiting for service to be ready...',
+        'Backend is compiling resources...',
+        'Service almost ready...',
+        'Loading plugin system...',
+        'Initializing WebSocket channel...',
+        'Still loading, hang tight...',
+        'Almost there, please wait...',
+        'Warming up the cache...',
+        'Establishing service connection...',
+        'Resources loading in progress...',
+      ],
+      slow: [
+        'Taking longer than expected, please be patient...',
+        'First launch may take extra time...',
+        'Backend still initializing, do not close...',
+        'Processing a large compilation task...',
+        'Almost done, thanks for your patience...',
+        'Service is working hard to start...',
+        'Don\'t worry, everything is running normally...',
+      ]
+    };
+
+    let currentPhase = 'starting';
+    let isZh = true;
+    let tipTimer = null;
+    let stopped = false;
+
+    function pickRandom(arr) {
+      return arr[Math.floor(Math.random() * arr.length)];
+    }
+
+    function showTip() {
+      if (stopped) return;
+      const pool = isZh ? tips[currentPhase] : tipsEn[currentPhase];
+      const statusEl = document.getElementById('status');
+      // Fade out, change, fade in
+      statusEl.classList.add('fade');
+      setTimeout(() => {
+        statusEl.textContent = pickRandom(pool);
+        statusEl.classList.remove('fade');
+      }, 300);
+    }
+
+    function startTipRotation() {
+      showTip();
+      tipTimer = setInterval(() => {
+        showTip();
+      }, 3000 + Math.random() * 2000); // 3-5 seconds
+    }
+
+    function stopTipRotation() {
+      stopped = true;
+      if (tipTimer) { clearInterval(tipTimer); tipTimer = null; }
+    }
+
+    ipcRenderer.on('splash-status', (event, data) => {
+      const statusEl = document.getElementById('status');
+      const progressBar = document.getElementById('progressBar');
+
+      if (data.version) {
+        document.getElementById('version').textContent = 'v' + data.version;
+      }
+
+      if (data.lang) {
+        isZh = data.lang === 'zh';
+      }
+
+      if (data.phase) {
+        currentPhase = data.phase;
+        showTip();
+      }
+
+      if (data.status) {
+        // Explicit status overrides random tips
+        stopTipRotation();
+        statusEl.classList.remove('fade', 'error');
+        statusEl.classList.add('success');
+        statusEl.textContent = data.status;
+      }
+
+      if (data.error) {
+        stopTipRotation();
+        statusEl.classList.add('error');
+        statusEl.classList.remove('success');
+        statusEl.textContent = data.status || (isZh ? '启动遇到问题' : 'Startup issue detected');
+        progressBar.classList.remove('indeterminate');
+        progressBar.style.width = '100%';
+        progressBar.style.background = '#ff6b6b';
+      }
+
+      if (data.progress !== undefined) {
+        progressBar.classList.remove('indeterminate');
+        progressBar.style.width = data.progress + '%';
+        if (data.progress >= 100) {
+          progressBar.style.background = 'linear-gradient(90deg, #4ade80, #22d3ee)';
+        }
+      }
+    });
+
+    // Start rotating tips immediately
+    startTipRotation();
+
+    // After 30s switch to 'slow' phase automatically
+    setTimeout(() => {
+      if (!stopped && currentPhase === 'waiting') {
+        currentPhase = 'slow';
+        showTip();
+      }
+    }, 30000);
+
+    // Request initial state
+    ipcRenderer.send('splash-ready');
+  </script>
+</body>
+</html>
