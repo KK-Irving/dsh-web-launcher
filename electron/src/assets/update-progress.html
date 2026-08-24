@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+  <meta charset="UTF-8">
+  <title>Harness 更新</title>
+  <style>
+    :root {
+      --bg: #0c0c14; --surface: rgba(255,255,255,0.03); --border: rgba(255,255,255,0.06);
+      --text-1: rgba(255,255,255,0.92); --text-2: rgba(255,255,255,0.55); --text-3: rgba(255,255,255,0.3);
+      --accent: #4a9eff; --success: #34d399; --error: #f87171; --warn: #fbbf24;
+    }
+    html.light {
+      --bg: #f5f5f7; --surface: rgba(0,0,0,0.03); --border: rgba(0,0,0,0.08);
+      --text-1: rgba(0,0,0,0.88); --text-2: rgba(0,0,0,0.55); --text-3: rgba(0,0,0,0.3);
+      --accent: #0071e3; --success: #059669; --error: #dc2626; --warn: #d97706;
+    }
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      background: var(--bg); color: var(--text-1);
+      height: 100vh; display: flex; flex-direction: column;
+      padding: 20px 24px; -webkit-font-smoothing: antialiased;
+    }
+    .title { font-size: 16px; font-weight: 600; margin-bottom: 4px; }
+    .subtitle { font-size: 12px; color: var(--text-3); margin-bottom: 18px; }
+
+    .steps { display: flex; flex-direction: column; gap: 2px; margin-bottom: 16px; }
+    .step {
+      display: flex; align-items: center; gap: 10px; padding: 8px 10px;
+      border-radius: 6px; font-size: 13px; color: var(--text-2);
+    }
+    .step .icon { width: 20px; height: 20px; display: flex; align-items: center; justify-content: center; font-size: 12px; flex-shrink: 0; border-radius: 50%; background: var(--surface); border: 1px solid var(--border); }
+    .step.active { color: var(--text-1); background: var(--surface); }
+    .step.active .icon { border-color: var(--accent); color: var(--accent); animation: pulse 1s ease-in-out infinite; }
+    .step.done .icon { border-color: var(--success); color: var(--success); }
+    .step.failed .icon { border-color: var(--error); color: var(--error); }
+    .step .step-name { flex: 1; }
+    .step .step-status { font-size: 11px; color: var(--text-3); }
+    .step.done .step-status { color: var(--success); }
+    .step.failed .step-status { color: var(--error); }
+    @keyframes pulse { 0%,100% { transform: scale(1); } 50% { transform: scale(1.15); } }
+
+    .log-box {
+      flex: 1; overflow-y: auto; padding: 10px 12px;
+      background: var(--surface); border: 1px solid var(--border); border-radius: 8px;
+      font-family: 'SF Mono', 'Cascadia Code', Consolas, monospace;
+      font-size: 11px; line-height: 1.5; color: var(--text-2);
+      white-space: pre-wrap; word-break: break-all;
+    }
+    .log-box .err-line { color: var(--error); }
+    .log-box .ok-line { color: var(--success); }
+
+    .footer { margin-top: 14px; display: flex; justify-content: flex-end; gap: 8px; }
+    .footer button {
+      padding: 7px 16px; font-size: 12px; border-radius: 6px;
+      border: 1px solid var(--border); cursor: pointer;
+      background: var(--surface); color: var(--text-2);
+    }
+    .footer button.primary { background: var(--accent); color: #fff; border-color: var(--accent); }
+    .footer button:hover { opacity: 0.85; }
+    .footer button:disabled { opacity: 0.4; cursor: not-allowed; }
+  </style>
+</head>
+<body>
+  <div class="title" id="title">Harness 更新中...</div>
+  <div class="subtitle" id="subtitle">正在执行更新流程，请勿关闭此窗口</div>
+
+  <div class="steps" id="steps">
+    <div class="step" id="step-1">
+      <div class="icon" id="icon-1">1</div>
+      <div class="step-name">git pull（拉取最新代码）</div>
+      <div class="step-status" id="status-1"></div>
+    </div>
+    <div class="step" id="step-2">
+      <div class="icon" id="icon-2">2</div>
+      <div class="step-name">pnpm install（更新依赖）</div>
+      <div class="step-status" id="status-2"></div>
+    </div>
+    <div class="step" id="step-3">
+      <div class="icon" id="icon-3">3</div>
+      <div class="step-name">pnpm run build（重新构建）</div>
+      <div class="step-status" id="status-3"></div>
+    </div>
+  </div>
+
+  <div class="log-box" id="logBox"></div>
+
+  <div class="footer">
+    <button id="closeBtn" disabled>关闭</button>
+  </div>
+
+  <script>
+    const { ipcRenderer } = require('electron');
+    const logBox = document.getElementById('logBox');
+
+    const stepNames = {
+      1: { zh: 'git pull（拉取最新代码）', en: 'git pull (fetch latest code)' },
+      2: { zh: 'pnpm install（更新依赖）', en: 'pnpm install (update dependencies)' },
+      3: { zh: 'pnpm run build（重新构建）', en: 'pnpm run build (rebuild)' }
+    };
+    const statusText = {
+      zh: { pending: '等待中', running: '执行中...', done: '完成', failed: '失败' },
+      en: { pending: 'Pending', running: 'Running...', done: 'Done', failed: 'Failed' }
+    };
+
+    function setStep(step, state, lang) {
+      const el = document.getElementById('step-' + step);
+      const icon = document.getElementById('icon-' + step);
+      const status = document.getElementById('status-' + step);
+      el.className = 'step ' + state;
+      const s = statusText[lang] || statusText.zh;
+      status.textContent = s[state] || '';
+      if (state === 'done') icon.textContent = '\u2713';
+      else if (state === 'failed') icon.textContent = '\u2715';
+      else icon.textContent = String(step);
+    }
+
+    ipcRenderer.on('update-progress', (event, data) => {
+      const lang = data.lang || 'zh';
+
+      if (data.title) document.getElementById('title').textContent = data.title;
+      if (data.subtitle) document.getElementById('subtitle').textContent = data.subtitle;
+
+      if (data.step) {
+        setStep(data.step, data.state || 'active', lang);
+        if (data.stepName) {
+          document.querySelector('#step-' + data.step + ' .step-name').textContent = data.stepName;
+        }
+      }
+
+      if (data.log) {
+        const line = document.createElement('div');
+        if (data.isError) line.className = 'err-line';
+        else if (data.isSuccess) line.className = 'ok-line';
+        line.textContent = data.log;
+        logBox.appendChild(line);
+        logBox.scrollTop = logBox.scrollHeight;
+      }
+
+      if (data.finished) {
+        document.getElementById('closeBtn').disabled = false;
+        document.getElementById('closeBtn').classList.add('primary');
+        document.getElementById('closeBtn').textContent = lang === 'zh' ? '关闭' : 'Close';
+      }
+    });
+
+    document.getElementById('closeBtn').addEventListener('click', () => {
+      ipcRenderer.send('close-update-window');
+    });
+  </script>
+</body>
+</html>

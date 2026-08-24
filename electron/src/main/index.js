@@ -852,66 +852,108 @@ function updateTrayStatus(status) {
 
 async function restartBackend() {
   _log('restartBackend called')
-      const harnessRoot = resolveHarnessRoot()
+  const zhMode = t.lang === 'zh'
+  const harnessRoot = resolveHarnessRoot()
   if (!harnessRoot) {
     dialog.showErrorBox(t('appName'), t('backendNotFound'))
+    _log('restartBackend: no harness root')
     return
   }
-  stopBackend()
-  backendAdopted = false
-  await new Promise(r => setTimeout(r, 2000))
-  startBackend(harnessRoot)
+
+  // Show feedback immediately
+  if (tray) tray.setToolTip(zhMode ? 'DeepSeek Harness (正在重启后端...)' : 'DeepSeek Harness (restarting backend...)')
   updateTrayStatus('starting')
 
+  // 1. Stop existing backend (own or adopted)
+  _log('restartBackend: stopping old backend')
+  stopBackend()
+  backendAdopted = false
+
+  // 2. Wait for port to be released (max 20s)
+  _log('restartBackend: waiting for port release')
+  const portReleased = await waitForPortFree(DEFAULT_PORT, 20000)
+  if (!portReleased) {
+    _log('restartBackend: port NOT released after 20s, force killing')
+    killProcessOnPort(DEFAULT_PORT)
+    await new Promise(r => setTimeout(r, 2000))
+  }
+
+  // 3. Start new backend
+  _log('restartBackend: starting new backend')
+  startBackend(harnessRoot)
+
+  // 4. Wait for ready (with progress feedback)
+  _log('restartBackend: waiting for ready')
   const ready = await waitForReady()
   if (ready) {
+    _log('restartBackend: backend ready')
     updateTrayStatus('running')
+    if (tray) tray.setToolTip('DeepSeek Harness')
     // Reload all tabs
     for (const tab of tabs) {
-      tab.view.webContents.loadURL(tab.url)
+      if (tab.view && !tab.view.webContents.isDestroyed() && tab.url !== 'newtab') {
+        tab.view.webContents.loadURL(tab.url)
+      }
     }
+    const zh2 = t.lang === 'zh'
+    dialog.showMessageBox(mainWindow || undefined, {
+      type: 'info',
+      title: zh2 ? '重启完成' : 'Restart Complete',
+      message: zh2 ? '后端服务已成功重启。' : 'Backend service restarted successfully.'
+    })
   } else {
+    _log('restartBackend: FAILED to become ready')
     updateTrayStatus('error')
-    dialog.showErrorBox(t('appName'), t('backendRestartFail'))
+    if (tray) tray.setToolTip('DeepSeek Harness')
+    dialog.showErrorBox(
+      t('appName'),
+      zhMode
+        ? '后端重启失败。\n\n可能原因：\n  - 旧进程未完全退出\n  - 依赖或构建未完成\n\n请尝试退出客户端后重新启动。'
+        : 'Backend restart failed.\n\nPossible causes:\n  - Old process not fully exited\n  - Dependencies/build incomplete\n\nTry exiting the client and restarting.'
+    )
   }
 }
 
-// ── Launcher Self-Update ─────────────────────────────────────────────────────
-
-/**
- * Check if the launcher repo (dsh-web-launcher) has upstream updates.
- */
-async function checkLauncherUpdate() {
-  const launcherDir = path.resolve(__dirname, '..', '..', '..')
-  const gitDir = path.join(launcherDir, '.git')
-  if (!fs.existsSync(gitDir)) return { hasUpdate: false, error: 'Launcher directory is not a git repo' }
-
-  const { execFile } = require('child_process')
-  const { promisify } = require('util')
-  const execAsync = promisify(execFile)
-  const gitOpts = { cwd: launcherDir, windowsHide: true, shell: process.platform === 'win32' }
-
-  try {
-    await execAsync('git', ['fetch', '--quiet'], gitOpts)
-    const { stdout: branch } = await execAsync('git', ['rev-parse', '--abbrev-ref', 'HEAD'], gitOpts)
-    const { stdout: local } = await execAsync('git', ['rev-parse', 'HEAD'], gitOpts)
-    const { stdout: remote } = await execAsync('git', ['rev-parse', `origin/${branch.trim()}`], gitOpts)
-
-    const currentHead = local.trim().slice(0, 10)
-    const remoteHead = remote.trim().slice(0, 10)
-    const hasUpdate = currentHead !== remoteHead
-
-    let behind = 0
-    if (hasUpdate) {
-      const { stdout: count } = await execAsync('git', ['rev-list', '--count', `HEAD..origin/${branch.trim()}`], gitOpts)
-      behind = parseInt(count.trim(), 10) || 0
+function waitForPortFree(port, timeoutMs) {
+  return new Promise((resolve) => {
+    const startTime = Date.now()
+    const check = () => {
+      const net = require('net')
+      const socket = new net.Socket()
+      let resolved = false
+      socket.setTimeout(800)
+      socket.once('connect', () => {
+        socket.destroy()
+        if (Date.now() - startTime > timeoutMs) {
+          resolve(false)
+        } else {
+          setTimeout(check, 800)
+        }
+      })
+      socket.once('timeout', () => { socket.destroy(); resolve(true) })
+      socket.once('error', () => { socket.destroy(); resolve(true) })
+      socket.connect(port, '127.0.0.1')
     }
+    check()
+  })
+}
 
-    return { hasUpdate, currentHead, remoteHead, branch: branch.trim(), behind, launcherDir }
-  } catch (err) {
-    return { hasUpdate: false, error: err.message }
+function killProcessOnPort(port) {
+  try {
+    const { execSync } = require('child_process')
+    if (process.platform === 'win32') {
+      const result = execSync('netstat -ano | findstr ":' + port + '.*LISTENING"', { windowsHide: true, encoding: 'utf8' })
+      const match = result.match(/LISTENING\s+(\d+)/)
+      if (match) {
+        _log('killProcessOnPort: killing PID ' + match[1])
+        execSync('taskkill /PID ' + match[1] + ' /T /F', { windowsHide: true })
+      }
+    }
+  } catch (e) {
+    _log('killProcessOnPort: ' + e.message)
   }
 }
+
 
 /**
  * Pull latest launcher code + reinstall electron deps.
@@ -1024,7 +1066,20 @@ async function checkAndPromptLauncherUpdate() {
   if (response !== 0) return
 
   if (tray) tray.setToolTip(zhMode ? 'DeepSeek Harness (正在更新客户端...)' : 'DeepSeek Harness (updating launcher...)')
+  _log('user confirmed launcher update')
+  createUpdateWindow()
+  sendUpdateProgress({
+    title: zhMode ? '客户端更新中...' : 'Updating Client...',
+    subtitle: zhMode ? '正在执行 git pull + pnpm install' : 'Running git pull + pnpm install'
+  })
   const updateResult = await updateLauncher()
+  sendUpdateProgress({
+    finished: true,
+    title: updateResult.ok ? (zhMode ? '客户端更新完成' : 'Client Updated') : (zhMode ? '客户端更新失败' : 'Client Update Failed'),
+    subtitle: updateResult.ok
+      ? (zhMode ? '需要重启客户端生效' : 'Restart required to apply')
+      : (zhMode ? '更新过程中出错' : 'Error during update')
+  })
 
   if (updateResult.ok) {
     const { response: restartResponse } = await dialog.showMessageBox(mainWindow || undefined, {
@@ -1094,7 +1149,47 @@ async function checkHarnessUpdate() {
  * Pull latest harness code + reinstall deps + rebuild.
  * Returns { ok, output, error }
  */
-async function updateHarness() {
+// ── Update Progress Window ───────────────────────────────────────────────────
+
+let updateWindow = null
+
+function createUpdateWindow() {
+  if (updateWindow && !updateWindow.isDestroyed()) return
+  updateWindow = new BrowserWindow({
+    width: 560,
+    height: 480,
+    frame: false,
+    resizable: false,
+    alwaysOnTop: true,
+    center: true,
+    backgroundColor: '#0c0c14',
+    webPreferences: {
+      nodeIntegration: true,
+      contextIsolation: false
+    }
+  })
+  updateWindow.loadFile(path.join(__dirname, '..', 'assets', 'update-progress.html'))
+  updateWindow.on('closed', () => { updateWindow = null })
+}
+
+function sendUpdateProgress(data) {
+  if (updateWindow && !updateWindow.isDestroyed()) {
+    updateWindow.webContents.send('update-progress', { ...data, lang: t.lang })
+  }
+}
+
+function closeUpdateWindow() {
+  if (updateWindow && !updateWindow.isDestroyed()) {
+    updateWindow.close()
+    updateWindow = null
+  }
+}
+
+ipcMain.on('close-update-window', () => {
+  closeUpdateWindow()
+})
+
+async function updateHarness(onProgress) {
   _log('updateHarness started')
   const harnessRoot = resolveHarnessRoot()
   if (!harnessRoot) return { ok: false, error: t('backendNotFound') }
@@ -1105,27 +1200,60 @@ async function updateHarness() {
   const isWin = process.platform === 'win32'
   const shellOpts = { cwd: harnessRoot, windowsHide: true, shell: isWin, maxBuffer: 8 * 1024 * 1024 }
 
+  const emit = (data) => {
+    _log('updateHarness: ' + JSON.stringify(data))
+    sendUpdateProgress(data)
+    if (onProgress) onProgress(data)
+  }
+
   const steps = []
   try {
     // 1. git pull --ff-only
+    emit({ step: 1, state: 'active' })
+    _log('step1 git pull --ff-only starting')
     const pull = await execAsync('git', ['pull', '--ff-only'], { cwd: harnessRoot, windowsHide: true })
-    steps.push(`$ git pull --ff-only\n${(pull.stdout + pull.stderr).trim()}`)
+    const pullOutput = (pull.stdout + pull.stderr).trim()
+    steps.push('$ git pull --ff-only\n' + pullOutput)
+    emit({ step: 1, state: 'done', log: 'git pull OK', isSuccess: true })
+    if (pullOutput) {
+      pullOutput.split('\n').slice(0, 30).forEach(l => emit({ log: l }))
+    }
+    _log('step1 git pull done')
 
     // 2. pnpm install
+    emit({ step: 2, state: 'active', log: '$ pnpm install' })
+    _log('step2 pnpm install starting')
     const install = await execAsync('pnpm', ['install'], shellOpts)
-    steps.push(`$ pnpm install\n${(install.stdout + install.stderr).trim().slice(0, 2000)}`)
+    const installOutput = (install.stdout + install.stderr).trim()
+    steps.push('$ pnpm install\n' + installOutput.slice(0, 2000))
+    emit({ step: 2, state: 'done', log: 'pnpm install OK', isSuccess: true })
+    if (installOutput) {
+      installOutput.split('\n').slice(-30).forEach(l => emit({ log: l }))
+    }
+    _log('step2 pnpm install done')
 
     // 3. pnpm run build
+    emit({ step: 3, state: 'active', log: '$ pnpm run build' })
+    _log('step3 pnpm run build starting')
     const build = await execAsync('pnpm', ['run', 'build'], shellOpts)
-    steps.push(`$ pnpm run build\n${(build.stdout + build.stderr).trim().slice(0, 2000)}`)
+    const buildOutput = (build.stdout + build.stderr).trim()
+    steps.push('$ pnpm run build\n' + buildOutput.slice(0, 2000))
+    emit({ step: 3, state: 'done', log: 'pnpm run build OK', isSuccess: true })
+    if (buildOutput) {
+      buildOutput.split('\n').slice(-30).forEach(l => emit({ log: l }))
+    }
+    _log('step3 pnpm run build done')
 
     return { ok: true, output: steps.join('\n\n') }
   } catch (err) {
     const errOutput = (err.stdout || '') + (err.stderr || '') + (err.message || '')
-    steps.push(`ERROR: ${errOutput.slice(0, 2000)}`)
+    steps.push('ERROR: ' + errOutput.slice(0, 2000))
+    emit({ state: 'failed', log: 'ERROR: ' + err.message, isError: true })
+    _log('updateHarness FAILED: ' + err.message)
     return { ok: false, output: steps.join('\n\n'), error: err.message }
   }
 }
+
 // ── Settings & Extension Manager ─────────────────────────────────────────────
 
 async function checkAndPromptHarnessUpdate() {
@@ -1171,10 +1299,25 @@ async function checkAndPromptHarnessUpdate() {
     return
   }
 
-  // Perform update
+  // Perform update with progress window
   if (tray) tray.setToolTip(zhMode ? 'DeepSeek Harness (正在更新...)' : 'DeepSeek Harness (updating...)')
+  _log('user confirmed harness update, opening progress window')
+  createUpdateWindow()
+  sendUpdateProgress({
+    title: zhMode ? 'Harness 更新中...' : 'Updating Harness...',
+    subtitle: zhMode ? '正在执行更新流程，请勿关闭此窗口' : 'Running update process, do not close this window'
+  })
 
   const updateResult = await updateHarness()
+
+  sendUpdateProgress({
+    finished: true,
+    title: updateResult.ok ? (zhMode ? '更新完成' : 'Update Complete') : (zhMode ? '更新失败' : 'Update Failed'),
+    subtitle: updateResult.ok
+      ? (zhMode ? '仓库已更新、依赖已安装、构建已完成' : 'Repo updated, deps installed, build complete')
+      : (zhMode ? '更新过程中出错' : 'Error during update')
+  })
+  _log('harness update finished: ok=' + updateResult.ok)
 
   if (updateResult.ok) {
     const { response: restartResponse } = await dialog.showMessageBox(mainWindow || undefined, {
