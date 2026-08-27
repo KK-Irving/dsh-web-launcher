@@ -47,7 +47,7 @@ const strings = {
     // Dialogs - Backend start failed
     backendFailTitle: '后端启动失败',
     backendFailMessage:
-      'DSH Web 后端在 90 秒内未能就绪。\n\n' +
+      'DSH Web 后端在 {0} 秒内未能就绪。\n\n' +
       '可能原因：\n' +
       '  - pnpm 未安装或不在 PATH 中\n' +
       '  - 依赖未安装（需运行：pnpm install）\n' +
@@ -157,7 +157,7 @@ const strings = {
     // Dialogs - Backend start failed
     backendFailTitle: 'Backend Start Failed',
     backendFailMessage:
-      'The DSH web backend did not become ready within 90 seconds.\n\n' +
+      'The DSH web backend did not become ready within {0} seconds.\n\n' +
       'Possible causes:\n' +
       '  - pnpm not installed or not in PATH\n' +
       '  - Dependencies not installed (run: pnpm install)\n' +

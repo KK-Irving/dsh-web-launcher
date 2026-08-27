@@ -1481,7 +1481,7 @@ function showSettings() {
       store.set('language', newLang)
       t = createT(store)
       updateTrayMenu()
-      dialog.showMessageBox(mainWindow || undefined, { message: newLang === 'en' ? 'Language switched to English. Some changes take effect after restart.' : '已切换为中文。部分更改将在重启后生效。' })
+      dialog.showMessageBox(mainWindow || undefined, { message: newLang === 'en' ? 'Switched to English. Tray and new tabs apply immediately; already open pages refresh their language when reopened.' : '已切换为中文。托盘与新标签页立即生效，已打开页面的语言在重新打开后更新。' })
       return
     }
     if (response === 1) {
