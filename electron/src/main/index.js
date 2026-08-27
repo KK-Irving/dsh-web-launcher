@@ -344,7 +344,7 @@ function createTab(url = WEB_URL) {
   })
 
   view.webContents.on('page-title-updated', (_event, title) => {
-    const tab = tabs.find(t => t.id === id)
+    const tab = tabs.find(tb => tb.id === id)
     if (tab) {
       tab.title = title
       notifyTabBar()
@@ -352,7 +352,7 @@ function createTab(url = WEB_URL) {
   })
 
   view.webContents.on('did-navigate', (_event, navUrl) => {
-    const tab = tabs.find(t => t.id === id)
+    const tab = tabs.find(tb => tb.id === id)
     if (tab) {
       tab.url = navUrl
       persistTabs()
@@ -419,12 +419,12 @@ function createTab(url = WEB_URL) {
 
 function activateTab(id) {
   if (!mainWindow) return
-  const tab = tabs.find(t => t.id === id)
+  const tab = tabs.find(tb => tb.id === id)
   if (!tab) return
 
   // Remove all views, add the active one
-  for (const t of tabs) {
-    mainWindow.removeBrowserView(t.view)
+  for (const tb of tabs) {
+    mainWindow.removeBrowserView(tb.view)
   }
   mainWindow.addBrowserView(tab.view)
   activeTabId = id
@@ -435,7 +435,7 @@ function activateTab(id) {
 }
 
 function closeTab(id) {
-  const index = tabs.findIndex(t => t.id === id)
+  const index = tabs.findIndex(tb => tb.id === id)
   if (index === -1) return
 
   const tab = tabs[index]
@@ -460,7 +460,7 @@ function closeTab(id) {
 
 function resizeActiveView() {
   if (!mainWindow) return
-  const tab = tabs.find(t => t.id === activeTabId)
+  const tab = tabs.find(tb => tb.id === activeTabId)
   if (!tab) return
 
   const TAB_BAR_HEIGHT = 40
@@ -475,10 +475,10 @@ function resizeActiveView() {
 
 function notifyTabBar() {
   if (!mainWindow || mainWindow.isDestroyed()) return
-  const tabData = tabs.map(t => ({
-    id: t.id,
-    title: t.title || t('newTab'),
-    active: t.id === activeTabId
+  const tabData = tabs.map(tb => ({
+    id: tb.id,
+    title: tb.title || t('newTab'),
+    active: tb.id === activeTabId
   }))
   mainWindow.webContents.send('tabs-updated', tabData)
 }
@@ -492,7 +492,7 @@ function notifyAllTabs(channel, data) {
 }
 
 function persistTabs() {
-  store.set('tabs', tabs.map(t => t.url))
+  store.set('tabs', tabs.map(tb => tb.url))
 }
 
 // ── Chrome Extension Loading ─────────────────────────────────────────────────
@@ -679,7 +679,7 @@ function closeSplashAndShowMain() {
  */
 function registerAcceleratorMenu() {
   function activeTab() {
-    return tabs.find(t => t.id === activeTabId) || null
+    return tabs.find(tb => tb.id === activeTabId) || null
   }
   const menu = Menu.buildFromTemplate([
     {
@@ -701,7 +701,7 @@ function registerAcceleratorMenu() {
 /** Activate neighbor tab with wrap-around; direction ±1. */
 function cycleActiveTab(step) {
   if (tabs.length < 2) return
-  const idx = tabs.findIndex(t => t.id === activeTabId)
+  const idx = tabs.findIndex(tb => tb.id === activeTabId)
   const next = ((idx === -1 ? 0 : idx) + step + tabs.length) % tabs.length
   activateTab(tabs[next].id)
 }
@@ -1513,7 +1513,7 @@ function     registerTabIpc() {
   ipcOn('tab-close', (_event, id) => { _log('tab-close: ' + (id || activeTabId)); closeTab(id || activeTabId) })
   ipcOn('tab-activate', (_event, id) => { _log('tab-activate: ' + id); activateTab(id) })
   ipcOn('tab-reload', (_event, id) => {
-    const tab = tabs.find(t => t.id === (id || activeTabId))
+    const tab = tabs.find(tb => tb.id === (id || activeTabId))
     if (tab && !tab.view.webContents.isDestroyed()) tab.view.webContents.reload()
   })
 
@@ -1545,7 +1545,7 @@ function     registerTabIpc() {
     url: WEB_URL
   }))
   ipcHandle('restart-backend', async () => { await restartBackend(); return { ok: true } })
-  ipcHandle('get-tabs', () => tabs.map(t => ({ id: t.id, title: t.title, active: t.id === activeTabId })))
+  ipcHandle('get-tabs', () => tabs.map(tb => ({ id: tb.id, title: tb.title, active: tb.id === activeTabId })))
 
   // Harness update
   ipcHandle('check-harness-update', async () => await checkHarnessUpdate())
