@@ -347,7 +347,7 @@ function createTab(url = WEB_URL) {
       }
     })
     view.webContents.loadFile(path.join(__dirname, '..', 'assets', 'newtab.html'))
-    const tab = { id, view, title: t.lang === 'zh' ? '新标签页' : 'New Tab', url: 'newtab' }
+    const tab = { id, view, title: t('newTab'), url: 'newtab' }
     tabs.push(tab)
     activateTab(id)
     notifyTabBar()
@@ -884,16 +884,13 @@ function toggleDebugLog() {
   const current = store.get('debugLog')
   store.set('debugLog', !current)
   updateTrayMenu()
-  const zhMode = t.lang === 'zh'
   const logPath = getLogDir()
   dialog.showMessageBox(mainWindow || undefined, {
     type: 'info',
-    title: zhMode ? '调试日志' : 'Debug Log',
+    title: t('debugLogEnabledTitle'),
     message: !current
-      ? (zhMode
-        ? `调试日志已开启。\n\n请重启客户端以记录完整的启动日志。\n\n日志路径：\n${logPath}\n\n提示：可在新标签页「快捷操作」中点击「日志」直接打开该文件夹。`
-        : `Debug logging enabled.\n\nRestart the client to capture full startup logs.\n\nLog path:\n${logPath}\n\nTip: Click "Logs" in the new tab page to open this folder.`)
-      : (zhMode ? '调试日志已关闭。下次启动将不再记录日志。' : 'Debug logging disabled. No logs will be written on next launch.')
+      ? t('debugLogEnabledMsg', logPath)
+      : t('debugLogDisabledMsg')
   })
 }
 
@@ -917,13 +914,13 @@ function updateTrayMenu() {
     { label: t('trayOpenWindow'), click: () => showWindow() },
     { label: t('trayNewTab'), click: () => { showWindow(); createTab('newtab') } },
     { label: t('trayRestartBackend'), click: () => restartBackend() },
-    { label: t.lang === 'zh' ? '检查 Harness 更新' : 'Check Harness Update', click: () => checkAndPromptHarnessUpdate() },
-    { label: t.lang === 'zh' ? '检查更新' : 'Check for Updates', click: () => checkForAllUpdates() },
+    { label: t('harnessCheckUpdate'), click: () => checkAndPromptHarnessUpdate() },
+    { label: t('trayCheckUpdate'), click: () => checkForAllUpdates() },
     { type: 'separator' },
     { label: `${t('trayExtensions')} (${extensionCount})`, click: () => showExtensionManager() },
     { label: t('traySettings'), click: () => showSettings() },
 
-    { label: (store.get('debugLog') ? '✓ ' : '') + (t.lang === 'zh' ? '调试日志' : 'Debug Log'), click: () => toggleDebugLog() },
+    { label: (store.get('debugLog') ? '✓ ' : '') + t('trayDebugLog'), click: () => toggleDebugLog() },
     { type: 'separator' },
     { label: t('trayQuit'), click: () => { isQuitting = true; app.quit() } }
   ])
@@ -942,7 +939,6 @@ function updateTrayStatus(status) {
 
 async function restartBackend() {
   _log('restartBackend called')
-  const zhMode = t.lang === 'zh'
   const harnessRoot = resolveHarnessRoot()
   if (!harnessRoot) {
     dialog.showErrorBox(t('appName'), t('backendNotFound'))
@@ -951,7 +947,7 @@ async function restartBackend() {
   }
 
   // Show feedback immediately
-  if (tray) tray.setToolTip(zhMode ? 'DeepSeek Harness (正在重启后端...)' : 'DeepSeek Harness (restarting backend...)')
+  if (tray) tray.setToolTip('DeepSeek Harness (' + t('tipRestartingBackend') + ')')
   updateTrayStatus('starting')
 
   // 1. Stop existing backend (own or adopted)
@@ -985,21 +981,18 @@ async function restartBackend() {
         tab.view.webContents.loadURL(tab.url)
       }
     }
-    const zh2 = t.lang === 'zh'
     dialog.showMessageBox(mainWindow || undefined, {
       type: 'info',
-      title: zh2 ? '重启完成' : 'Restart Complete',
-      message: zh2 ? '后端服务已成功重启。' : 'Backend service restarted successfully.'
+      title: t('backendRestartDoneTitle'),
+      message: t('backendRestartDoneMsg')
     })
   } else {
     _log('restartBackend: FAILED to become ready')
     updateTrayStatus('error')
     if (tray) tray.setToolTip('DeepSeek Harness')
     dialog.showErrorBox(
-      t('appName'),
-      zhMode
-        ? '后端重启失败。\n\n可能原因：\n  - 旧进程未完全退出\n  - 依赖或构建未完成\n\n请尝试退出客户端后重新启动。'
-        : 'Backend restart failed.\n\nPossible causes:\n  - Old process not fully exited\n  - Dependencies/build incomplete\n\nTry exiting the client and restarting.'
+      t('backendRestartFailTitle'),
+      t('backendRestartFailMsg')
     )
   }
 }
@@ -1102,31 +1095,26 @@ async function updateLauncher() {
 
 async function checkForAllUpdates() {
   _log('checkForAllUpdates called, isPackaged=' + app.isPackaged)
-  const zhMode = t.lang === 'zh'
   const isPackaged = app.isPackaged
 
   if (isPackaged) {
     // Packaged mode: use electron-updater if available, otherwise show GitHub link
     if (autoUpdater) {
       try {
-        if (tray) tray.setToolTip(zhMode ? 'DeepSeek Harness (检查更新中...)' : 'DeepSeek Harness (checking...)')
+        if (tray) tray.setToolTip('DeepSeek Harness (' + t('checkingUpdatesTooltip') + ')')
         const result = await autoUpdater.checkForUpdates()
         if (!result || !result.updateInfo || result.updateInfo.version === app.getVersion()) {
           dialog.showMessageBox(mainWindow || undefined, {
             type: 'info',
-            title: zhMode ? '已是最新版本' : 'Up to Date',
-            message: zhMode
-              ? `当前版本 ${app.getVersion()} 已是最新。`
-              : `Version ${app.getVersion()} is up to date.`
+            title: t('clientUpToDateTitle'),
+            message: t('clientUpToDateMsg', app.getVersion())
           })
         }
       } catch (err) {
         dialog.showMessageBox(mainWindow || undefined, {
           type: 'info',
-          title: zhMode ? '检查更新' : 'Check for Updates',
-          message: zhMode
-            ? `自动更新暂不可用（未找到 GitHub Release）。\n\n如需更新，请访问：\nhttps://github.com/KK-Irving/dsh-web-launcher/releases\n\n当前版本：${app.getVersion()}`
-            : `Auto-update unavailable (no GitHub Release found).\n\nVisit:\nhttps://github.com/KK-Irving/dsh-web-launcher/releases\n\nCurrent version: ${app.getVersion()}`
+          title: t('trayCheckUpdate'),
+          message: t('autoUpdateUnavailableMsg', app.getVersion())
         })
       }
       updateTrayMenu()
@@ -1134,10 +1122,8 @@ async function checkForAllUpdates() {
       // autoUpdater not initialized (autoUpdate disabled or require failed)
       dialog.showMessageBox(mainWindow || undefined, {
         type: 'info',
-        title: zhMode ? '检查更新' : 'Check for Updates',
-        message: zhMode
-          ? `如需更新，请访问：\nhttps://github.com/KK-Irving/dsh-web-launcher/releases\n\n当前版本：${app.getVersion()}`
-          : `To update, visit:\nhttps://github.com/KK-Irving/dsh-web-launcher/releases\n\nCurrent version: ${app.getVersion()}`
+        title: t('trayCheckUpdate'),
+        message: t('manualUpdateVisitMsg', app.getVersion())
       })
     }
   } else {
@@ -1147,12 +1133,11 @@ async function checkForAllUpdates() {
 }
 
 async function checkAndPromptLauncherUpdate() {
-  const zhMode = t.lang === 'zh'
   const result = await checkLauncherUpdate()
 
   if (result.error) {
     dialog.showErrorBox(
-      zhMode ? '检查客户端更新失败' : 'Launcher Update Check Failed',
+      t('launcherCheckFailTitle'),
       result.error
     )
     return
@@ -1161,51 +1146,45 @@ async function checkAndPromptLauncherUpdate() {
   if (!result.hasUpdate) {
     dialog.showMessageBox(mainWindow || undefined, {
       type: 'info',
-      title: zhMode ? '客户端已是最新' : 'Launcher Up to Date',
-      message: zhMode
-        ? `当前客户端代码已是最新版本（${result.currentHead}）。`
-        : `Launcher code is up to date (${result.currentHead}).`
+      title: t('launcherUpToDateTitle'),
+      message: t('launcherUpToDateMsg', result.currentHead)
     })
     return
   }
 
   const { response } = await dialog.showMessageBox(mainWindow || undefined, {
     type: 'question',
-    title: zhMode ? '发现客户端更新' : 'Launcher Update Available',
-    message: zhMode
-      ? `客户端仓库有 ${result.behind} 个新提交。\n当前：${result.currentHead}\n远程：${result.remoteHead}\n\n是否立即更新？（git pull + pnpm install）\n更新后需重启客户端生效。`
-      : `Launcher repo has ${result.behind} new commit(s).\nLocal: ${result.currentHead}\nRemote: ${result.remoteHead}\n\nUpdate now? (git pull + pnpm install)\nApp restart required after update.`,
-    buttons: [zhMode ? '立即更新' : 'Update Now', zhMode ? '稍后' : 'Later'],
+    title: t('launcherAvailTitle'),
+    message: t('launcherAvailMsg', String(result.behind), result.currentHead, result.remoteHead),
+    buttons: [t('harnessUpdateNow'), t('updateBtnLater')],
     defaultId: 0
   })
 
   if (response !== 0) return
 
-  if (tray) tray.setToolTip(zhMode ? 'DeepSeek Harness (正在更新客户端...)' : 'DeepSeek Harness (updating launcher...)')
+  if (tray) tray.setToolTip('DeepSeek Harness (updating launcher...)')
   _log('user confirmed launcher update')
   createUpdateWindow()
   sendUpdateProgress({
-    title: zhMode ? '客户端更新中...' : 'Updating Client...',
-    subtitle: zhMode ? '正在执行 git pull + pnpm install' : 'Running git pull + pnpm install'
+    title: t('launcherUpdatingTitle'),
+    subtitle: t('launcherUpdatingSubtitle')
   })
   const updateResult = await updateLauncher()
   sendUpdateProgress({
     finished: true,
-    title: updateResult.ok ? (zhMode ? '客户端更新完成' : 'Client Updated') : (zhMode ? '客户端更新失败' : 'Client Update Failed'),
+    title: updateResult.ok ? t('launcherUpdatedTitle') : t('updateFailedTitle'),
     subtitle: updateResult.ok
-      ? (zhMode ? '需要重启客户端生效' : 'Restart required to apply')
-      : (zhMode ? '更新过程中出错' : 'Error during update')
+      ? t('updateNeedRestart')
+      : t('updateErrorGeneric')
   })
 
   if (updateResult.ok) {
     const { response: restartResponse } = await dialog.showMessageBox(mainWindow || undefined, {
       type: 'info',
-      title: zhMode ? '客户端更新完成' : 'Launcher Updated',
-      message: zhMode
-        ? '客户端代码已更新。需要重启应用才能生效。\n是否立即重启？'
-        : 'Launcher code updated. Restart required to apply changes.\nRestart now?',
+      title: t('launcherUpdatedTitle'),
+      message: t('launcherUpdatedMsg'),
       detail: updateResult.output.slice(0, 2000),
-      buttons: [zhMode ? '立即重启' : 'Restart Now', zhMode ? '稍后' : 'Later'],
+      buttons: [t('updateBtnRestart'), t('updateBtnLater')],
       defaultId: 0
     })
     if (restartResponse === 0) {
@@ -1215,7 +1194,7 @@ async function checkAndPromptLauncherUpdate() {
     }
   } else {
     dialog.showErrorBox(
-      zhMode ? '客户端更新失败' : 'Launcher Update Failed',
+      t('updateFailedTitle'),
       (updateResult.output || updateResult.error).slice(0, 2000)
     )
   }
@@ -1375,14 +1354,13 @@ async function updateHarness(onProgress) {
 
 async function checkAndPromptHarnessUpdate() {
   _log('checkAndPromptHarnessUpdate called')
-  const zhMode = t.lang === 'zh'
-  if (tray) tray.setToolTip(zhMode ? 'DeepSeek Harness (正在检查更新...)' : 'DeepSeek Harness (checking for updates...)')
+  if (tray) tray.setToolTip('DeepSeek Harness (' + t('checkingUpdatesTooltip') + ')')
 
   const result = await checkHarnessUpdate()
 
   if (result.error) {
     dialog.showErrorBox(
-      zhMode ? '检查更新失败' : 'Update Check Failed',
+      t('harnessCheckFailTitle'),
       result.error
     )
     updateTrayMenu()
@@ -1392,10 +1370,8 @@ async function checkAndPromptHarnessUpdate() {
   if (!result.hasUpdate) {
     dialog.showMessageBox(mainWindow || undefined, {
       type: 'info',
-      title: zhMode ? 'Harness 已是最新' : 'Harness Up to Date',
-      message: zhMode
-        ? `当前分支 ${result.branch} 已是最新版本（${result.currentHead}）。`
-        : `Branch ${result.branch} is up to date (${result.currentHead}).`
+      title: t('harnessUpToDateTitle'),
+      message: t('harnessUpToDateMsg', result.branch, result.currentHead)
     })
     updateTrayMenu()
     return
@@ -1403,11 +1379,9 @@ async function checkAndPromptHarnessUpdate() {
 
   const { response } = await dialog.showMessageBox(mainWindow || undefined, {
     type: 'question',
-    title: zhMode ? '发现 Harness 更新' : 'Harness Update Available',
-    message: zhMode
-      ? `分支 ${result.branch} 有 ${result.behind} 个新提交可用。\n当前：${result.currentHead}\n远程：${result.remoteHead}\n\n是否立即更新？（将执行 git pull + pnpm install + pnpm run build）`
-      : `Branch ${result.branch} has ${result.behind} new commit(s).\nLocal: ${result.currentHead}\nRemote: ${result.remoteHead}\n\nUpdate now? (git pull + pnpm install + pnpm run build)`,
-    buttons: [zhMode ? '立即更新' : 'Update Now', zhMode ? '稍后' : 'Later'],
+    title: t('harnessUpdateAvailTitle'),
+    message: t('harnessUpdateAvailMsg', result.branch, String(result.behind), result.currentHead, result.remoteHead),
+    buttons: [t('harnessUpdateNow'), t('updateBtnLater')],
     defaultId: 0
   })
 
@@ -1417,34 +1391,30 @@ async function checkAndPromptHarnessUpdate() {
   }
 
   // Perform update with progress window
-  if (tray) tray.setToolTip(zhMode ? 'DeepSeek Harness (正在更新...)' : 'DeepSeek Harness (updating...)')
+  if (tray) tray.setToolTip('DeepSeek Harness (updating...)')
   _log('user confirmed harness update, opening progress window')
   createUpdateWindow()
   sendUpdateProgress({
-    title: zhMode ? 'Harness 更新中...' : 'Updating Harness...',
-    subtitle: zhMode ? '正在执行更新流程，请勿关闭此窗口' : 'Running update process, do not close this window'
+    title: t('updateProgressTitle', 'Harness'),
+    subtitle: t('updateProgressSubtitleSteps')
   })
 
   const updateResult = await updateHarness()
 
   sendUpdateProgress({
     finished: true,
-    title: updateResult.ok ? (zhMode ? '更新完成' : 'Update Complete') : (zhMode ? '更新失败' : 'Update Failed'),
-    subtitle: updateResult.ok
-      ? (zhMode ? '仓库已更新、依赖已安装、构建已完成' : 'Repo updated, deps installed, build complete')
-      : (zhMode ? '更新过程中出错' : 'Error during update')
+    title: updateResult.ok ? t('harnessUpdateCompleteTitle') : t('updateFailedTitle'),
+    subtitle: updateResult.ok ? t('harnessUpdateDoneSubtitle') : t('updateErrorGeneric')
   })
   _log('harness update finished: ok=' + updateResult.ok)
 
   if (updateResult.ok) {
     const { response: restartResponse } = await dialog.showMessageBox(mainWindow || undefined, {
       type: 'info',
-      title: zhMode ? '更新完成' : 'Update Complete',
-      message: zhMode
-        ? '仓库已更新、依赖已安装、构建已完成。\n是否重启后端服务？'
-        : 'Repository updated, dependencies installed, build complete.\nRestart the backend service?',
+      title: t('harnessUpdateCompleteTitle'),
+      message: t('harnessUpdateCompleteMsg'),
       detail: updateResult.output.slice(0, 3000),
-      buttons: [zhMode ? '重启后端' : 'Restart Backend', zhMode ? '稍后手动重启' : 'Later'],
+      buttons: [t('harnessRestartBackend'), t('harnessRestartLater')],
       defaultId: 0
     })
     if (restartResponse === 0) {
@@ -1452,8 +1422,8 @@ async function checkAndPromptHarnessUpdate() {
     }
   } else {
     dialog.showErrorBox(
-      zhMode ? '更新失败' : 'Update Failed',
-      (zhMode ? '更新过程中出错：\n\n' : 'Error during update:\n\n') + (updateResult.output || updateResult.error).slice(0, 3000)
+      t('updateFailedTitle'),
+      t('harnessUpdateFailPrefix') + (updateResult.output || updateResult.error).slice(0, 3000)
     )
   }
 
@@ -1739,7 +1709,7 @@ function notifyNewtabTheme() {
         const { dialog: dlg } = require('electron')
         dlg.showOpenDialog(mainWindow, {
           properties: ['openDirectory'],
-          title: t.lang === 'zh' ? '选择 Chrome 扩展目录' : 'Select Chrome Extension Directory'
+          title: t('extSelectTitle')
         }).then(({ filePaths }) => {
           if (filePaths && filePaths.length > 0) {
             addExtension(filePaths[0])
@@ -1749,15 +1719,14 @@ function notifyNewtabTheme() {
       }
       case 'manage-extensions':
         // Open extensions info dialog
-        const zhMode = t.lang === 'zh'
         const exts = store.get('extensions') || []
         require('electron').dialog.showMessageBox(mainWindow || undefined, {
           type: 'info',
-          title: zhMode ? '已加载的扩展' : 'Loaded Extensions',
+          title: t('extTitle'),
           message: exts.length > 0
             ? exts.map((e, i) => `${i+1}. ${e.split(/[/\\]/).pop()}`).join('\n')
-            : (zhMode ? '暂无已加载的扩展' : 'No extensions loaded'),
-          buttons: ['OK']
+            : t('extNone'),
+          buttons: [t('extBtnOk')]
         })
         break
     }
@@ -1829,7 +1798,7 @@ if (!gotTheLock) {
       updateTrayStatus('running')
       _log('adopted existing service on port')
       console.log('[dsh-desktop] Adopted existing DSH web service')
-      sendSplashStatus({ status: t.lang === 'zh' ? '✓ 已连接到运行中的服务' : '✓ Connected to running service', progress: 100 })
+      sendSplashStatus({ status: t('splashConnected'), progress: 100 })
       setTimeout(() => { closeSplashAndShowMain() }, 800)
     } else if (store.get('autoStartBackend')) {
       sendSplashStatus({ phase: 'starting', lang: t.lang })
@@ -1841,7 +1810,7 @@ if (!gotTheLock) {
       _log('waitForReady result: ' + ready)
       if (ready) {
         updateTrayStatus('running')
-        sendSplashStatus({ status: t.lang === 'zh' ? '✓ 服务已就绪，正在打开界面...' : '✓ Service ready, opening UI...', progress: 100 })
+        sendSplashStatus({ status: t('splashReady'), progress: 100 })
         setTimeout(() => { closeSplashAndShowMain() }, 500)
       } else {
         updateTrayStatus('starting')
@@ -1851,7 +1820,7 @@ if (!gotTheLock) {
       }
     } else {
       // Auto-start disabled — just open the window
-      sendSplashStatus({ status: t.lang === 'zh' ? '手动模式：请自行启动后端' : 'Manual mode: start backend yourself', progress: 100 })
+      sendSplashStatus({ status: t('splashManualMode'), progress: 100 })
       setTimeout(() => { closeSplashAndShowMain() }, 1000)
     }
 
