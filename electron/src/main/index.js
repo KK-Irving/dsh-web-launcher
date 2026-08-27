@@ -1193,7 +1193,8 @@ function closeUpdateWindow() {
   }
 }
 
-ipcMain.on('close-update-window', () => {
+ipcMain.on('close-update-window', (event) => {
+  if (!isTrustedSender(event)) return
   closeUpdateWindow()
 })
 
@@ -1438,29 +1439,62 @@ function registerGlobalShortcut() {
 
 // ── IPC Handlers (Tab Bar Communication) ─────────────────────────────────────
 
+// ── Sender Trust Boundary ─────────────────────────────────────────────────────
+// Only local app pages (file:// shell / newtab / splash / update windows) and
+// the harness web UI itself (WEB_URL) may invoke desktop IPC. Arbitrary
+// websites opened in tabs get the preload bridge too, so privileged channels
+// (config writes, backend control, update/git flows) must reject them here.
+function isTrustedSender(event) {
+  try {
+    const raw = (event.senderFrame && event.senderFrame.url) || ''
+    const u = new URL(raw)
+    // file:// covers shell/newtab/splash/update windows; the harness origin
+    // covers DSH web pages (some flows navigate via the literal 127.0.0.1:port,
+    // so compare the parsed origin instead of the WEB_URL string).
+    if (u.protocol === 'file:') return true
+    return u.origin === `http://${DEFAULT_HOST}:${DEFAULT_PORT}`
+  } catch {
+    return false
+  }
+}
+
+function ipcOn(channel, handler) {
+  ipcOn(channel, (event, ...args) => {
+    if (!isTrustedSender(event)) { _log(`ipc blocked [${channel}] from untrusted frame`); return }
+    handler(event, ...args)
+  })
+}
+
+function ipcHandle(channel, handler) {
+  ipcHandle(channel, (event, ...args) => {
+    if (!isTrustedSender(event)) { _log(`ipc blocked [${channel}] from untrusted frame`); return null }
+    return handler(event, ...args)
+  })
+}
+
 function     registerTabIpc() {
-  ipcMain.on('tab-new', () => { _log('tab-new'); createTab('newtab') })
-  ipcMain.on('tab-close', (_event, id) => { _log('tab-close: ' + (id || activeTabId)); closeTab(id || activeTabId) })
-  ipcMain.on('tab-activate', (_event, id) => { _log('tab-activate: ' + id); activateTab(id) })
-  ipcMain.on('tab-reload', (_event, id) => {
+  ipcOn('tab-new', () => { _log('tab-new'); createTab('newtab') })
+  ipcOn('tab-close', (_event, id) => { _log('tab-close: ' + (id || activeTabId)); closeTab(id || activeTabId) })
+  ipcOn('tab-activate', (_event, id) => { _log('tab-activate: ' + id); activateTab(id) })
+  ipcOn('tab-reload', (_event, id) => {
     const tab = tabs.find(t => t.id === id)
     if (tab) tab.view.webContents.reload()
   })
 
   // Window controls from tab bar
-  ipcMain.on('window-minimize', () => { if (mainWindow) mainWindow.minimize() })
-  ipcMain.on('window-maximize', () => {
+  ipcOn('window-minimize', () => { if (mainWindow) mainWindow.minimize() })
+  ipcOn('window-maximize', () => {
     if (mainWindow) {
       if (mainWindow.isMaximized()) mainWindow.unmaximize()
       else mainWindow.maximize()
     }
   })
-  ipcMain.on('window-close', () => { if (mainWindow) mainWindow.close() })
+  ipcOn('window-close', () => { if (mainWindow) mainWindow.close() })
 
   // Config access
-  ipcMain.handle('get-config', (_event, key) => store.get(key))
-  ipcMain.handle('set-config', (_event, key, value) => { store.set(key, value); return true })
-  ipcMain.handle('set-language', (_event, lang) => {
+  ipcHandle('get-config', (_event, key) => store.get(key))
+  ipcHandle('set-config', (_event, key, value) => { store.set(key, value); return true })
+  ipcHandle('set-language', (_event, lang) => {
     if (lang === 'zh' || lang === 'en') {
       store.set('language', lang)
       t = createT(store)
@@ -1469,22 +1503,22 @@ function     registerTabIpc() {
     }
     return false
   })
-  ipcMain.handle('get-backend-status', () => ({
+  ipcHandle('get-backend-status', () => ({
     running: backendProcess !== null || backendAdopted,
     adopted: backendAdopted,
     url: WEB_URL
   }))
-  ipcMain.handle('restart-backend', async () => { await restartBackend(); return { ok: true } })
-  ipcMain.handle('get-tabs', () => tabs.map(t => ({ id: t.id, title: t.title, active: t.id === activeTabId })))
+  ipcHandle('restart-backend', async () => { await restartBackend(); return { ok: true } })
+  ipcHandle('get-tabs', () => tabs.map(t => ({ id: t.id, title: t.title, active: t.id === activeTabId })))
 
   // Harness update
-  ipcMain.handle('check-harness-update', async () => await checkHarnessUpdate())
-  ipcMain.handle('update-harness', async () => await updateHarness())
-  ipcMain.handle('check-launcher-update', async () => await checkLauncherUpdate())
-  ipcMain.on('splash-ready', () => { sendSplashStatus({ version: app.getVersion(), lang: t.lang, phase: 'starting' }) })
+  ipcHandle('check-harness-update', async () => await checkHarnessUpdate())
+  ipcHandle('update-harness', async () => await updateHarness())
+  ipcHandle('check-launcher-update', async () => await checkLauncherUpdate())
+  ipcOn('splash-ready', () => { sendSplashStatus({ version: app.getVersion(), lang: t.lang, phase: 'starting' }) })
 
   // ── New Tab Page IPC ─────────────────────────────────────────────────────────
-  ipcMain.on('newtab-open-url', (event, inputUrl) => {
+  ipcOn('newtab-open-url', (event, inputUrl) => {
     _log('newtab-open-url: ' + inputUrl)
     // Ensure URL has protocol
     let finalUrl = inputUrl.trim()
@@ -1503,7 +1537,7 @@ function     registerTabIpc() {
     }
   })
 
-  ipcMain.on('newtab-ready', (event) => {
+  ipcOn('newtab-ready', (event) => {
     const { nativeTheme } = require('electron')
     event.sender.send('newtab-info', {
       lang: t.lang,
@@ -1532,7 +1566,7 @@ function notifyNewtabTheme() {
     })
   }
 
-  ipcMain.on('dsh-theme-changed', (event, scheme) => {
+  ipcOn('dsh-theme-changed', (event, scheme) => {
     _log('dsh-theme-changed: ' + scheme)
     const theme = (scheme === 'dark') ? 'dark' : 'light'
     store.set('theme', theme)
@@ -1544,7 +1578,7 @@ function notifyNewtabTheme() {
     })
   })
 
-  ipcMain.on('newtab-set-theme', (event, theme) => {
+  ipcOn('newtab-set-theme', (event, theme) => {
     _log('newtab-set-theme: ' + theme)
     store.set('theme', theme)
     // Notify all newtab views
@@ -1555,12 +1589,12 @@ function notifyNewtabTheme() {
     })
   })
 
-  ipcMain.on('newtab-save-bookmarks', (event, bookmarks) => {
+  ipcOn('newtab-save-bookmarks', (event, bookmarks) => {
     _log('newtab-save-bookmarks: ' + (bookmarks ? bookmarks.length : 0) + ' items')
     store.set('bookmarks', bookmarks)
   })
 
-  ipcMain.on('newtab-action', (event, action) => {
+  ipcOn('newtab-action', (event, action) => {
     _log('newtab-action: ' + action)
     switch (action) {
       case 'new-session': {
@@ -1620,7 +1654,7 @@ function notifyNewtabTheme() {
         break
     }
   })
-  ipcMain.handle('update-launcher', async () => await updateLauncher())
+  ipcHandle('update-launcher', async () => await updateLauncher())
 }
 
 // ── App Lifecycle ────────────────────────────────────────────────────────────
