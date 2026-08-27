@@ -735,29 +735,46 @@ function createMainWindow() {
   // All root items are marked visible:false, so no menu bar is rendered.
   registerAcceleratorMenu()
 
-  const bounds = store.get('windowBounds')
+  const saved = store.get('windowBounds') || {}
 
-  mainWindow = new BrowserWindow({
-    width: bounds.width,
-    height: bounds.height,
+  const windowOptions = {
+    width: saved.width || 1280,
+    height: saved.height || 860,
     minWidth: 800,
     minHeight: 600,
     icon: getIconPath(),
     title: 'DeepSeek Harness',
-    show: false, // will show maximized after creation
+    show: false, // will show (maximized or normal) after creation
     webPreferences: {
       preload: path.join(__dirname, '..', 'preload', 'index.js'),
       contextIsolation: true,
       nodeIntegration: false
     }
-  })
+  }
+
+  // Restore position only when it still lands on a connected display
+  if (typeof saved.x === 'number' && typeof saved.y === 'number') {
+    try {
+      const { screen } = require('electron')
+      const visible = screen.getAllDisplays().some(d => (
+        saved.x >= d.workArea.x &&
+        saved.x < d.workArea.x + d.workArea.width &&
+        saved.y >= d.workArea.y &&
+        saved.y < d.workArea.y + d.workArea.height
+      ))
+      if (visible) { windowOptions.x = saved.x; windowOptions.y = saved.y }
+    } catch { /* screen unavailable — use default centering */ }
+  }
+  const restoreMaximized = !!saved.isMaximized
+
+  mainWindow = new BrowserWindow(windowOptions)
 
   // Load the tab bar shell (lightweight HTML)
   mainWindow.loadFile(path.join(__dirname, '..', 'assets', 'shell.html'))
 
-  // Show maximized by default
+  // Show maximized by default on first run, afterwards restore last state
   if (!store.get('startMinimized')) {
-    mainWindow.maximize()
+    if (restoreMaximized) mainWindow.maximize()
     mainWindow.show()
   }
 
@@ -797,9 +814,17 @@ function createMainWindow() {
 }
 
 function saveBounds() {
-  if (!mainWindow) return
+  if (!mainWindow || mainWindow.isDestroyed()) return
   const bounds = mainWindow.getBounds()
-  store.set('windowBounds', { width: bounds.width, height: bounds.height })
+  const prev = store.get('windowBounds') || {}
+  store.set('windowBounds', {
+    ...prev,
+    width: bounds.width,
+    height: bounds.height,
+    x: bounds.x,
+    y: bounds.y,
+    isMaximized: mainWindow.isMaximized()
+  })
 }
 
 function showWindow() {
