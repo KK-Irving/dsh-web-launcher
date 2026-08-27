@@ -673,10 +673,46 @@ function closeSplashAndShowMain() {
   createMainWindow()
 }
 
+/**
+ * Register window-wide keyboard accelerators through an invisible application
+ * menu (root items visible:false ⇒ nothing rendered in the title area).
+ */
+function registerAcceleratorMenu() {
+  function activeTab() {
+    return tabs.find(t => t.id === activeTabId) || null
+  }
+  const menu = Menu.buildFromTemplate([
+    {
+      label: 'Shortcuts',
+      visible: false,
+      submenu: [
+        { label: 'New Tab', accelerator: 'CmdOrCtrl+T', click: () => createTab('newtab') },
+        { label: 'Close Tab', accelerator: 'CmdOrCtrl+W', click: () => closeTab(activeTabId) },
+        { label: 'Reload Tab', accelerator: 'CmdOrCtrl+R', click: () => { const tab = activeTab(); if (tab && !tab.view.webContents.isDestroyed()) tab.view.webContents.reload() } },
+        { label: 'Next Tab', accelerator: 'Ctrl+Tab', click: () => cycleActiveTab(1) },
+        { label: 'Previous Tab', accelerator: 'Ctrl+Shift+Tab', click: () => cycleActiveTab(-1) },
+        { label: 'Toggle Developer Tools', accelerator: 'F12', click: () => { const tab = activeTab(); if (tab && !tab.view.webContents.isDestroyed()) tab.view.webContents.toggleDevTools() } }
+      ]
+    }
+  ])
+  Menu.setApplicationMenu(menu)
+}
+
+/** Activate neighbor tab with wrap-around; direction ±1. */
+function cycleActiveTab(step) {
+  if (tabs.length < 2) return
+  const idx = tabs.findIndex(t => t.id === activeTabId)
+  const next = ((idx === -1 ? 0 : idx) + step + tabs.length) % tabs.length
+  activateTab(tabs[next].id)
+}
+
 function createMainWindow() {
   _log('createMainWindow')
-  // Remove default menu bar (File/Edit/View/Window/Help)
-  Menu.setApplicationMenu(null)
+  // Hidden application menu: its accelerators (Ctrl+T/W/R, F12) work no matter
+  // whether the tab bar or a BrowserView holds keyboard focus — plain
+  // window-level keydown listeners can't see keys typed inside BrowserViews.
+  // All root items are marked visible:false, so no menu bar is rendered.
+  registerAcceleratorMenu()
 
   const bounds = store.get('windowBounds')
 
@@ -1477,8 +1513,8 @@ function     registerTabIpc() {
   ipcOn('tab-close', (_event, id) => { _log('tab-close: ' + (id || activeTabId)); closeTab(id || activeTabId) })
   ipcOn('tab-activate', (_event, id) => { _log('tab-activate: ' + id); activateTab(id) })
   ipcOn('tab-reload', (_event, id) => {
-    const tab = tabs.find(t => t.id === id)
-    if (tab) tab.view.webContents.reload()
+    const tab = tabs.find(t => t.id === (id || activeTabId))
+    if (tab && !tab.view.webContents.isDestroyed()) tab.view.webContents.reload()
   })
 
   // Window controls from tab bar

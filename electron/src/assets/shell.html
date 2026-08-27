@@ -161,11 +161,9 @@
       desktop.newTab()
     })
 
-    // Keyboard shortcuts
-    document.addEventListener('keydown', (e) => {
-      if (e.ctrlKey && e.key === 't') { desktop.newTab(); e.preventDefault() }
-      if (e.ctrlKey && e.key === 'w') { desktop.closeTab(null); e.preventDefault() } // close active
-    })
+    // Keyboard shortcuts (Ctrl+T/W/R, F12) are registered as hidden app-menu
+    // accelerators in the main process so they work while BrowserViews hold
+    // focus — see registerAcceleratorMenu().
 
     function escapeHtml(text) {
       const div = document.createElement('div')
