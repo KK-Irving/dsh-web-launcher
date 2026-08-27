@@ -29,14 +29,17 @@ pnpm start
 
 ### Key Features
 
-- **Multi-tab** — Ctrl+T new tab, Ctrl+W close, middle-click close
-- **System tray** — minimize to tray, double-click to restore
-- **Global shortcut** — Alt+D toggles window visibility
+- **Multi-tab** — Ctrl+T new tab, Ctrl+W close, Ctrl+R reload, Ctrl+Tab / Ctrl+Shift+Tab switch, middle-click close
+- **New Tab dashboard** — tray 「New Tab」and Ctrl+T open a local start page with an address bar, editable bookmarks and backend status
+- **Theme sync** — switching appearance (light/dark/system) inside DSH recolors every New Tab page and the tab bar live
+- **System tray** — close button minimizes to tray, double-click to restore
+- **Global shortcut** — Alt+D toggles window visibility, F12 toggles DevTools of the active tab
 - **Chrome extensions** — load unpacked extensions via tray menu
 - **Harness auto-update** — one-click `git pull` + `pnpm install` + `pnpm run build` from tray menu
 - **App auto-update** — checks GitHub Releases for new client versions
 - **i18n** — default Chinese, switchable to English in Settings
-- **No default menu bar** — clean UI, starts maximized
+- **Sandboxed browsing** — websites opened in tabs are cut off from desktop controls (config writes, backend restart, update flows)
+- **Window state restore** — normal size/position/maximized state survive restarts
 
 ### Build Distributable
 
@@ -126,6 +129,7 @@ When a matching directory is found, the launcher also checks its git remote. If 
 dsh-web-launcher/
 ├── electron/                        # Electron desktop client (v2.0)
 │   ├── package.json                 # Electron + builder config
+│   ├── pnpm-workspace.yaml          # pnpm workspace marker
 │   ├── README.md                    # Full Electron documentation
 │   ├── scripts/
 │   │   ├── setup.ps1                # One-click install + launch
@@ -134,16 +138,20 @@ dsh-web-launcher/
 │       ├── main/index.js            # Main process (window, tray, tabs, backend, extensions, updater)
 │       ├── main/locale.js           # i18n strings (zh/en)
 │       ├── preload/index.js         # Context bridge (safe IPC)
-│       └── assets/shell.html        # Tab bar UI
+│       └── assets/
+│           ├── shell.html           # Tab bar UI
+│           ├── newtab.html          # New Tab dashboard
+│           ├── splash.html          # Startup splash
+│           └── update-progress.html # Harness/launcher update progress
 ├── start-web.ps1                    # PowerShell launcher (tray icon + service control)
 ├── install.ps1                      # PowerShell installer/uninstaller
 ├── refresh-icon.ps1                 # Regenerate dsh-web.ico
-├── lib\common.ps1                   # Shared helpers (discovery, runners, probing, i18n)
-├── tools\capture-screenshots.ps1    # Documentation screenshot capture
-├── docs\screenshots\                # Screenshots referenced by READMEs
+├── lib/common.ps1                   # Shared helpers (discovery, runners, probing, i18n)
+├── tools/capture-screenshots.ps1    # Documentation screenshot capture
+├── docs/screenshots/                # Screenshots referenced by READMEs
 ├── dsh-web.ico                      # Tray / shortcut icon
-├── VERSION                          # Project version (2.0.0)
-├── logs\                            # Runtime logs (git-ignored)
+├── VERSION                          # Project version (keep in sync with electron/package.json)
+├── logs/                            # Runtime logs (git-ignored)
 └── repo-root.txt                    # Local checkout path (git-ignored)
 ```
 

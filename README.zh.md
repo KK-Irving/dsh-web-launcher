@@ -29,14 +29,17 @@ pnpm start
 
 ### 主要功能
 
-- **多标签页** — Ctrl+T 新建、Ctrl+W 关闭、中键关闭、标签持久化
+- **多标签页** — Ctrl+T 新建、Ctrl+W 关闭、Ctrl+R 刷新、Ctrl+Tab / Ctrl+Shift+Tab 切换、中键关闭
+- **新标签页仪表盘** — 托盘「新建标签页」与 Ctrl+T 打开本地起始页：地址栏、可编辑书签、后端状态
+- **主题跟随** — DSH 设置中的外观（浅色/深色/跟随系统）切换后，所有新标签页与标签栏实时同步变色
 - **系统托盘** — 关闭窗口最小化到托盘，双击恢复
-- **全局快捷键** — Alt+D 切换窗口显示/隐藏
+- **全局快捷键** — Alt+D 切换窗口显示/隐藏，F12 切换当前标签开发者工具
 - **Chrome 扩展** — 通过托盘菜单加载未打包的 Chrome 扩展
 - **Harness 一键更新** — 托盘菜单中检查更新，一键 `git pull` + `pnpm install` + `pnpm run build`
 - **客户端自动更新** — 检查 GitHub Releases 的新版本
 - **中英文切换** — 默认中文，可在设置中切换为英文
-- **无默认菜单栏** — 简洁界面，启动即最大化
+- **浏览隔离** — 标签页内打开的外部网站无法调用桌面控制（配置写入、重启后端、更新流程等）
+- **窗口状态记忆** — 常规尺寸/位置/最大化状态重启后还原
 
 ### 打包分发
 
@@ -124,6 +127,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File install.ps1 -Uninstall
 dsh-web-launcher/
 ├── electron/                        # Electron 桌面客户端 (v2.0)
 │   ├── package.json                 # Electron + 打包配置
+│   ├── pnpm-workspace.yaml          # pnpm workspace 标记
 │   ├── README.md                    # Electron 完整文档
 │   ├── scripts/
 │   │   ├── setup.ps1                # 一键安装 + 启动
@@ -132,16 +136,20 @@ dsh-web-launcher/
 │       ├── main/index.js            # 主进程（窗口/托盘/标签/后端/扩展/更新）
 │       ├── main/locale.js           # 国际化字符串（中/英）
 │       ├── preload/index.js         # 安全桥接（IPC）
-│       └── assets/shell.html        # 标签栏 UI
+│       └── assets/
+│           ├── shell.html           # 标签栏 UI
+│           ├── newtab.html          # 新标签页仪表盘
+│           ├── splash.html          # 启动闪屏
+│           └── update-progress.html # Harness/客户端更新进度窗
 ├── start-web.ps1                    # PowerShell 启动器（托盘图标 + 服务控制）
 ├── install.ps1                      # PowerShell 安装/卸载器
 ├── refresh-icon.ps1                 # 重新生成 dsh-web.ico
-├── lib\common.ps1                   # 共享函数库（仓库定位、启动命令、端口检测、国际化）
-├── tools\capture-screenshots.ps1    # 文档截图工具
-├── docs\screenshots\                # README 引用的截图
+├── lib/common.ps1                   # 共享函数库（仓库定位、启动命令、端口检测、国际化）
+├── tools/capture-screenshots.ps1    # 文档截图工具
+├── docs/screenshots/                # README 引用的截图
 ├── dsh-web.ico                      # 托盘 / 快捷方式图标
-├── VERSION                          # 项目版本（2.0.0）
-├── logs\                            # 运行日志（git 忽略）
+├── VERSION                          # 项目版本（与 electron/package.json 保持一致）
+├── logs/                            # 运行日志（git 忽略）
 └── repo-root.txt                    # 本机 harness 仓库路径（git 忽略）
 ```
 
