@@ -31,6 +31,13 @@ contextBridge.exposeInMainWorld('dshDesktop', {
     ipcRenderer.on('tabs-updated', (_event, tabs) => callback(tabs))
   },
 
+  // ── Theme ──────────────────────────────────────────────────────────────────
+  // Resolved 'dark' | 'light' pushed by the main process when the harness UI,
+  // OS preference or the New Tab cycle button changes the palette.
+  onThemeChanged: (callback) => {
+    ipcRenderer.on('dsh-theme', (_event, theme) => callback(theme))
+  },
+
   // ── Backend ────────────────────────────────────────────────────────────────
   getBackendStatus: () => ipcRenderer.invoke('get-backend-status'),
   restartBackend: () => ipcRenderer.invoke('restart-backend'),

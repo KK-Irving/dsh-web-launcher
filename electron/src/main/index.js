@@ -523,6 +523,18 @@ function notifyAllTabs(channel, data) {
   }
 }
 
+/** Push a resolved theme to the shell tab bar and every New Tab page. */
+function pushThemeToRenderers(theme) {
+  try {
+    if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('dsh-theme', theme)
+  } catch { /* window gone */ }
+  for (const tb of tabs) {
+    if (tb.url === 'newtab' && tb.view && !tb.view.webContents.isDestroyed()) {
+      tb.view.webContents.send('newtab-theme', theme)
+    }
+  }
+}
+
 function persistTabs() {
   store.set('tabs', tabs.map(tb => tb.url))
 }
@@ -1654,37 +1666,29 @@ function     registerTabIpc() {
   
 
 function notifyNewtabTheme() {
-    const { nativeTheme, BrowserView } = require('electron')
+    const { nativeTheme } = require('electron')
     const theme = nativeTheme.shouldUseDarkColors ? 'dark' : 'light'
-    // Notify all newtab views
-    tabs.forEach(tb => {
-      if (tb.url === 'newtab' && tb.view && !tb.view.webContents.isDestroyed()) {
-        tb.view.webContents.send('newtab-theme', theme)
-      }
-    })
+    pushThemeToRenderers(theme)
   }
 
   ipcOn('dsh-theme-changed', (event, scheme) => {
     _log('dsh-theme-changed: ' + scheme)
     const theme = (scheme === 'dark') ? 'dark' : 'light'
     store.set('theme', theme)
-    // Sync to all newtab views
-    tabs.forEach(tb => {
-      if (tb.url === 'newtab' && tb.view && !tb.view.webContents.isDestroyed()) {
-        tb.view.webContents.send('newtab-theme', theme)
-      }
-    })
+    // Sync shell tab bar and all newtab views
+    pushThemeToRenderers(theme)
   })
 
   ipcOn('newtab-set-theme', (event, theme) => {
     _log('newtab-set-theme: ' + theme)
     store.set('theme', theme)
-    // Notify all newtab views
-    tabs.forEach(tb => {
-      if (tb.url === 'newtab' && tb.view && !tb.view.webContents.isDestroyed()) {
-        tb.view.webContents.send('newtab-theme', theme)
-      }
-    })
+    if (theme !== 'system') {
+      pushThemeToRenderers(theme === 'light' ? 'light' : 'dark')
+    } else {
+      // System preference: resolve once here so renderers get a concrete value
+      const { nativeTheme } = require('electron')
+      pushThemeToRenderers(nativeTheme.shouldUseDarkColors ? 'dark' : 'light')
+    }
   })
 
   ipcOn('newtab-save-bookmarks', (event, bookmarks) => {
