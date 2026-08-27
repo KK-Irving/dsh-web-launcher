@@ -1267,9 +1267,18 @@ function createUpdateWindow() {
   updateWindow.on('closed', () => { updateWindow = null })
 }
 
+/** Resolved light/dark for aux windows (system preference resolved locally). */
+function currentResolvedTheme() {
+  const pref = store.get('theme') || 'system'
+  if (pref === 'system') {
+    try { return require('electron').nativeTheme.shouldUseDarkColors ? 'dark' : 'light' } catch { return 'dark' }
+  }
+  return pref === 'light' ? 'light' : 'dark'
+}
+
 function sendUpdateProgress(data) {
   if (updateWindow && !updateWindow.isDestroyed()) {
-    updateWindow.webContents.send('update-progress', { ...data, lang: t.lang })
+    updateWindow.webContents.send('update-progress', { ...data, lang: t.lang, theme: currentResolvedTheme() })
   }
 }
 
