@@ -788,7 +788,10 @@ function createMainWindow() {
   // Hidden application menu: its accelerators (Ctrl+T/W/R, F12) work no matter
   // whether the tab bar or a BrowserView holds keyboard focus — plain
   // window-level keydown listeners can't see keys typed inside BrowserViews.
-  // All root items are marked visible:false, so no menu bar is rendered.
+  // The root item is visible:false, but that alone only hides it from layout —
+  // Windows can still reveal the bar via Alt/F10 (exposing "Shortcuts").
+  // setMenuBarVisibility(false) below disables the bar entirely, so the menu
+  // exists purely as an accelerator carrier and can never surface as UI.
   try {
     registerAcceleratorMenu()
   } catch (err) {
@@ -809,6 +812,7 @@ function createMainWindow() {
     icon: getIconPath(),
     title: 'DeepSeek Harness',
     show: false, // will show (maximized or normal) after creation
+    autoHideMenuBar: true,
     webPreferences: {
       preload: path.join(__dirname, '..', 'preload', 'index.js'),
       contextIsolation: true,
@@ -832,6 +836,10 @@ function createMainWindow() {
   const restoreMaximized = !!saved.isMaximized
 
   mainWindow = new BrowserWindow(windowOptions)
+
+  // Fully disable the menu bar (Alt/F10 can never reveal it). The in-memory
+  // menu from registerAcceleratorMenu() keeps its accelerators working.
+  mainWindow.setMenuBarVisibility(false)
   journal('main window created bounds=' + JSON.stringify(mainWindow.getBounds()))
 
   // Load the tab bar shell (lightweight HTML)
