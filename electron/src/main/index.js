@@ -1642,7 +1642,7 @@ function notifyNewtabTheme() {
       case 'manage-extensions':
         // Open extensions info dialog
         const zhMode = t.lang === 'zh'
-        const exts = store.get('chromeExtensions') || []
+        const exts = store.get('extensions') || []
         require('electron').dialog.showMessageBox(mainWindow || undefined, {
           type: 'info',
           title: zhMode ? '已加载的扩展' : 'Loaded Extensions',
