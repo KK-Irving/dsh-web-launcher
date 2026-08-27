@@ -149,14 +149,27 @@
       }
 
       if (data.finished) {
+        if (!installArmed) {
+          document.getElementById('closeBtn').textContent = lang === 'zh' ? '关闭' : 'Close';
+        }
         document.getElementById('closeBtn').disabled = false;
         document.getElementById('closeBtn').classList.add('primary');
-        document.getElementById('closeBtn').textContent = lang === 'zh' ? '关闭' : 'Close';
+      }
+
+      // Client update reached "ready to install": the footer becomes the
+      // restart-and-install action (client-install-update) instead of plain close.
+      if (data.canInstall) {
+        installArmed = true;
+        const btn = document.getElementById('closeBtn');
+        btn.disabled = false;
+        btn.classList.add('primary');
+        btn.textContent = lang === 'zh' ? '立即重启安装' : 'Restart & Install';
       }
     });
 
+    let installArmed = false;
     document.getElementById('closeBtn').addEventListener('click', () => {
-      ipcRenderer.send('close-update-window');
+      ipcRenderer.send(installArmed ? 'client-install-update' : 'close-update-window');
     });
   </script>
 </body>

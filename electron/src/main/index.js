@@ -615,6 +615,16 @@ function removeExtension(extPath) {
 // ── Auto-Update ──────────────────────────────────────────────────────────────
 
 let autoUpdater = null
+// True while the interactive client-update flow drives the shared progress
+// window; global electron-updater events then feed that window (with real
+// percentages) instead of spawning dialogs mid-flight.
+let clientUpdUI = false
+let lastProgressSentAt = 0
+
+function sendClientUpdate(data) {
+  if (!clientUpdUI) return
+  sendUpdateProgress({ title: t('cliTitle'), ...data })
+}
 
 function     initAutoUpdater() {
   if (!store.get('autoUpdate')) return
@@ -628,6 +638,8 @@ function     initAutoUpdater() {
 
     autoUpdater.on('update-available', (info) => {
       console.log(`[dsh-desktop] Update available: ${info.version}`)
+      // Interactive flow reports this itself; dialogs only for silent checks.
+      if (clientUpdUI) return
       dialog.showMessageBox(mainWindow || undefined, {
         type: 'info',
         title: t('updateAvailTitle'),
@@ -642,8 +654,38 @@ function     initAutoUpdater() {
       })
     })
 
+    // Live download percentage — mirrors the harness update window experience.
+    autoUpdater.on('download-progress', (p) => {
+      if (!clientUpdUI) return
+      const now = Date.now()
+      const pct = Math.round(p.percent || 0)
+      const milestone = (pct % 10 === 0)
+      if (!milestone && now - lastProgressSentAt < 400) return
+      lastProgressSentAt = now
+      sendClientUpdate({
+        step: 2, state: 'active',
+        subtitle: t('cliProgressSub',
+          pct,
+          (p.transferred / 1048576).toFixed(1),
+          (p.total / 1048576).toFixed(1),
+          ((p.bytesPerSecond || 0) / 1048576).toFixed(2))
+      })
+    })
+
     autoUpdater.on('update-downloaded', (info) => {
       console.log(`[dsh-desktop] Update downloaded: ${info.version}`)
+      if (clientUpdUI) {
+        sendClientUpdate({
+          step: 2, state: 'done',
+          subtitle: t('cliReadySub', info.version),
+          log: t('cliReadyLog'), isSuccess: true
+        })
+        setTimeout(() => sendClientUpdate({
+          step: 3, state: 'done',
+          canInstall: true
+        }), 350)
+        return
+      }
       dialog.showMessageBox(mainWindow || undefined, {
         type: 'info',
         title: t('updateReadyTitle'),
@@ -660,6 +702,15 @@ function     initAutoUpdater() {
 
     autoUpdater.on('error', (err) => {
       console.warn(`[dsh-desktop] Auto-update error: ${err.message}`)
+      journal('auto-updater error: ' + (err && err.stack || err))
+      if (clientUpdUI) {
+        clientUpdUI = false
+        sendClientUpdate({
+          step: clientUpdFailedStep(), state: 'failed',
+          subtitle: t('updateErrorGeneric'),
+          log: String(err.message || err), isError: true, finished: true
+        })
+      }
     })
 
     // Check for updates after a short delay
@@ -992,7 +1043,7 @@ function updateTrayMenu() {
     { label: t('trayNewTab'), click: () => { showWindow(); createTab('newtab') } },
     { label: t('trayRestartBackend'), click: () => restartBackend() },
     { label: t('harnessCheckUpdate'), click: () => checkAndPromptHarnessUpdate() },
-    { label: t('trayCheckUpdate'), click: () => checkForAllUpdates() },
+    { label: t('trayCheckUpdate'), click: () => runInteractiveClientUpdate() },
     { type: 'separator' },
     { label: `${t('trayExtensions')} (${extensionCount})`, click: () => showExtensionManager() },
     { label: t('traySettings'), click: () => showSettings() },
@@ -1167,6 +1218,77 @@ async function updateLauncher() {
   } catch (err) {
     steps.push(`ERROR: ${((err.stdout || '') + (err.stderr || '') + (err.message || '')).slice(0, 2000)}`)
     return { ok: false, output: steps.join('\n\n'), error: err.message }
+  }
+}
+
+// Which progress-window step the interactive flow is on (for error mapping).
+let clientUpdStep = 1
+function clientUpdFailedStep() { return clientUpdStep || 1 }
+
+/**
+ * Foreground client-update flow — parity with the harness updater: drives the
+ * shared progress window through check → download (live %) → ready-to-install.
+ * The user confirms before any byte is downloaded, and nothing happens without
+ * visible feedback anymore.
+ */
+async function runInteractiveClientUpdate() {
+  if (!app.isPackaged || !autoUpdater) {
+    // Dev/source builds keep their flows (git-pull launcher update / GitHub link)
+    await checkForAllUpdates()
+    return
+  }
+  if (updateWindow && !updateWindow.isDestroyed()) { updateWindow.focus(); return }
+  createUpdateWindow()
+  clientUpdUI = true
+  clientUpdStep = 1
+  const emit = (data) => {
+    sendClientUpdate({ ...data, lang: t.lang })
+    if (data.step) clientUpdStep = data.step
+  }
+  emit({ step: 1, state: 'active', stepName: t('cliStep1'), subtitle: t('cliCheckingSub'), log: t('cliCheckingSub') })
+  try {
+    const res = await autoUpdater.checkForUpdates()
+    const v = res && res.updateInfo && res.updateInfo.version
+    if (!v || v === app.getVersion()) {
+      clientUpdUI = false
+      emit({
+        step: 1, state: 'done',
+        subtitle: t('cliUpToDateDone', app.getVersion()),
+        log: t('cliUpToDateDone', app.getVersion()), isSuccess: true, finished: true
+      })
+      return
+    }
+    emit({
+      step: 1, state: 'done',
+      subtitle: t('cliFoundSub', v),
+      log: 'v' + v, isSuccess: true
+    })
+
+    const { response } = await dialog.showMessageBox(mainWindow || undefined, {
+      type: 'question',
+      title: t('cliTitle'),
+      message: t('cliAskDownload', v),
+      buttons: [t('updateBtnDownload'), t('updateBtnLater')],
+      defaultId: 0,
+      cancelId: 1
+    })
+    if (response !== 0) {
+      clientUpdUI = false
+      emit({ step: 2, state: 'pending', stepName: t('cliStep2'), subtitle: t('cliSkippedSub'), finished: true })
+      return
+    }
+    // Keep clientUpdUI=true: download-progress / update-downloaded listeners
+    // take over from here and drive the window to the install-ready state.
+    emit({ step: 2, state: 'active', stepName: t('cliStep2'), log: t('cliStartDlLog', v), subtitle: t('cliStartDlLog', v) })
+    await autoUpdater.downloadUpdate()
+  } catch (err) {
+    clientUpdUI = false
+    journal('interactive client update failed: ' + (err && err.stack || err))
+    emit({
+      step: clientUpdFailedStep(), state: 'failed',
+      subtitle: t('updateErrorGeneric'),
+      log: String(err.message || err), isError: true, finished: true
+    })
   }
 }
 
@@ -1368,7 +1490,22 @@ function closeUpdateWindow() {
 
 ipcMain.on('close-update-window', (event) => {
   if (!isTrustedSender(event)) return
+  // Ending the interactive session re-enables the silent-check dialog path.
+  clientUpdUI = false
   closeUpdateWindow()
+})
+
+ipcOn('client-install-update', () => {
+  clientUpdUI = false
+  isQuitting = true
+  if (!autoUpdater) return
+  try {
+    closeUpdateWindow()
+    autoUpdater.quitAndInstall()
+  } catch (err) {
+    journal('quitAndInstall failed: ' + (err && err.stack || err))
+    dialog.showErrorBox(t('updateFailedTitle'), String(err.message || err))
+  }
 })
 
 async function updateHarness(onProgress) {
@@ -1781,7 +1918,7 @@ function notifyNewtabTheme() {
         checkAndPromptHarnessUpdate()
         break
       case 'check-update':
-        checkForAllUpdates()
+        runInteractiveClientUpdate()
         break
       case 'load-extension': {
         const { dialog: dlg } = require('electron')
