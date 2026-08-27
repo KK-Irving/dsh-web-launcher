@@ -253,13 +253,45 @@
 
     function renderSites() {
       const grid = document.getElementById('sitesGrid');
-      grid.innerHTML = bookmarks.map((b, i) =>
-        `<div class="pill" onclick="if(!editing)openUrl('${b.url.replace(/'/g,"\\'")}')">` +
-        `<span class="pi">${b.icon||'🔗'}</span>${b.name}` +
-        `<span class="x-badge" onclick="event.stopPropagation();removeSite(${i})">&#x2715;</span>` +
-        `</div>`
-      ).join('');
+      // This page runs with nodeIntegration — NEVER interpolate bookmark
+      // data through innerHTML/inline handlers (stored XSS = RCE here).
+      grid.textContent = '';
+      bookmarks.forEach((b, i) => {
+        const pill = document.createElement('div');
+        pill.className = 'pill';
+        const icon = document.createElement('span');
+        icon.className = 'pi';
+        icon.textContent = b.icon || '🔗';
+        const name = document.createElement('span');
+        name.textContent = b.name;
+        const del = document.createElement('span');
+        del.className = 'x-badge';
+        del.textContent = '\u2715';
+        del.addEventListener('click', (e) => { e.stopPropagation(); removeSite(i); });
+        pill.append(icon, name, del);
+        grid.appendChild(pill);
+      });
       document.getElementById('sitesSection').classList.toggle('editing', editing);
+    }
+
+    // Open by position via one delegated listener instead of inline onclick attrs
+    document.getElementById('sitesGrid').addEventListener('click', (e) => {
+      if (editing) return;
+      const pill = e.target.closest('.pill');
+      if (!pill || !pill.parentNode) return;
+      const idx = Array.prototype.indexOf.call(pill.parentNode.children, pill);
+      if (bookmarks[idx]) openUrl(bookmarks[idx].url);
+    });
+
+    // Only plain http(s) targets are ever stored or opened from this page.
+    function normalizeUrl(input) {
+      const raw = String(input == null ? '' : input).trim();
+      if (!raw) return null;
+      const candidate = /^https?:\/\//i.test(raw) ? raw : 'https://' + raw;
+      try {
+        const parsed = new URL(candidate);
+        return (parsed.protocol === 'http:' || parsed.protocol === 'https:') ? candidate : null;
+      } catch { return null }
     }
 
     function toggleEdit() {
@@ -278,7 +310,7 @@
     }
     function addSite() {
       const name = document.getElementById('addName').value.trim();
-      const url = document.getElementById('addUrl').value.trim();
+      const url = normalizeUrl(document.getElementById('addUrl').value);
       if (!name || !url) return;
       bookmarks.push({ name, url, icon: '🔗' });
       document.getElementById('addName').value = '';
@@ -292,8 +324,8 @@
     document.getElementById('themeBtn').addEventListener('click', cycleTheme);
 
     function doAction(a) { ipcRenderer.send('newtab-action', a); }
-    function openUrl(u) { if(!editing) ipcRenderer.send('newtab-open-url', u); }
-    document.getElementById('urlInput').addEventListener('keydown', e => { if(e.key==='Enter'){const v=e.target.value.trim();if(v)ipcRenderer.send('newtab-open-url',v)} });
+    function openUrl(u) { if(!editing){ const t = normalizeUrl(u); if (t) ipcRenderer.send('newtab-open-url', t); } }
+    document.getElementById('urlInput').addEventListener('keydown', e => { if(e.key==='Enter'){ const t = normalizeUrl(e.target.value); if (t) ipcRenderer.send('newtab-open-url', t); } });
 
     ipcRenderer.on('newtab-info', (_, d) => {
       if (d.lang) { lang = d.lang; render(); }
