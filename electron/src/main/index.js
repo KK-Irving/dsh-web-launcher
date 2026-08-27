@@ -982,19 +982,45 @@ function waitForPortFree(port, timeoutMs) {
   })
 }
 
-function killProcessOnPort(port) {
+/**
+ * PIDs of every process LISTENING on exactly this TCP port (Windows).
+ * Parses netstat columns directly instead of findstr, so ":3080" can no
+ * longer prefix-match neighbors like ":30800", and every owner is returned
+ * rather than just the first line hit.
+ * @returns {string[]} PIDs (strings), possibly empty
+ */
+function listListeningPids(port) {
+  if (process.platform !== 'win32') return []
   try {
     const { execSync } = require('child_process')
-    if (process.platform === 'win32') {
-      const result = execSync('netstat -ano | findstr ":' + port + '.*LISTENING"', { windowsHide: true, encoding: 'utf8' })
-      const match = result.match(/LISTENING\s+(\d+)/)
-      if (match) {
-        _log('killProcessOnPort: killing PID ' + match[1])
-        execSync('taskkill /PID ' + match[1] + ' /T /F', { windowsHide: true })
+    const result = execSync('netstat -ano -p tcp', { windowsHide: true, encoding: 'utf8' })
+    const pids = new Set()
+    for (const rawLine of result.split('\n')) {
+      const cols = rawLine.trim().split(/\s+/)
+      // Proto  LocalAddress  ForeignAddress  State  PID
+      if (cols.length >= 5 &&
+          /^LISTENING$/i.test(cols[3]) &&
+          cols[1].endsWith(':' + port)) {
+        pids.add(cols[4])
       }
     }
-  } catch (e) {
-    _log('killProcessOnPort: ' + e.message)
+    return [...pids]
+  } catch {
+    return []
+  }
+}
+
+function killProcessOnPort(port) {
+  const pids = listListeningPids(port)
+  if (pids.length === 0) return
+  const { execSync } = require('child_process')
+  for (const pid of pids) {
+    try {
+      _log('killProcessOnPort: killing PID ' + pid + ' on port ' + port)
+      execSync('taskkill /PID ' + pid + ' /T /F', { windowsHide: true })
+    } catch (e) {
+      _log('killProcessOnPort: PID ' + pid + ' failed: ' + e.message)
+    }
   }
 }
 
@@ -1806,18 +1832,8 @@ if (!gotTheLock) {
     if (backendProcess) {
       stopBackend()
     } else if (backendAdopted) {
-      // Adopted external service: also kill it by port owner
-      try {
-        const { execSync } = require('child_process')
-        if (process.platform === 'win32') {
-          // Find PID on port and kill tree
-          const result = execSync(`netstat -ano | findstr ":${DEFAULT_PORT}.*LISTENING"`, { windowsHide: true, encoding: 'utf8' })
-          const match = result.match(/LISTENING\s+(\d+)/)
-          if (match) {
-            execSync(`taskkill /PID ${match[1]} /T /F`, { windowsHide: true })
-          }
-        }
-      } catch { /* port may already be free */ }
+      // Adopted external service: also kill it by exact port owner(s)
+      killProcessOnPort(DEFAULT_PORT)
       backendAdopted = false
     }
   })
