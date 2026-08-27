@@ -1615,14 +1615,14 @@ function isTrustedSender(event) {
 }
 
 function ipcOn(channel, handler) {
-  ipcOn(channel, (event, ...args) => {
+  ipcMain.on(channel, (event, ...args) => {
     if (!isTrustedSender(event)) { _log(`ipc blocked [${channel}] from untrusted frame`); return }
     handler(event, ...args)
   })
 }
 
 function ipcHandle(channel, handler) {
-  ipcHandle(channel, (event, ...args) => {
+  ipcMain.handle(channel, (event, ...args) => {
     if (!isTrustedSender(event)) { _log(`ipc blocked [${channel}] from untrusted frame`); return null }
     return handler(event, ...args)
   })
