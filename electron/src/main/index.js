@@ -1080,7 +1080,7 @@ async function updateLauncher() {
 
   const steps = []
   try {
-    const pull = await execAsync('git', ['pull', '--ff-only'], { cwd: launcherDir, windowsHide: true, shell: isWin })
+    const pull = await execAsync('git', ['pull', '--ff-only'], { cwd: launcherDir, windowsHide: true, shell: isWin, maxBuffer: 8 * 1024 * 1024 })
     steps.push(`$ git pull --ff-only\n${(pull.stdout + pull.stderr).trim()}`)
 
     const install = await execAsync('pnpm', ['install'], { cwd: electronDir, windowsHide: true, shell: isWin, maxBuffer: 8 * 1024 * 1024 })
@@ -1307,7 +1307,7 @@ async function updateHarness(onProgress) {
     // 1. git pull --ff-only
     emit({ step: 1, state: 'active' })
     _log('step1 git pull --ff-only starting')
-    const pull = await execAsync('git', ['pull', '--ff-only'], { cwd: harnessRoot, windowsHide: true })
+    const pull = await execAsync('git', ['pull', '--ff-only'], shellOpts)
     const pullOutput = (pull.stdout + pull.stderr).trim()
     steps.push('$ git pull --ff-only\n' + pullOutput)
     emit({ step: 1, state: 'done', log: 'git pull OK', isSuccess: true })
