@@ -296,7 +296,18 @@ function stopBackend() {
     if (process.platform === 'win32') {
       spawn('taskkill', ['/PID', String(backendProcess.pid), '/T', '/F'], { windowsHide: true })
     } else {
-      process.kill(-backendProcess.pid, 'SIGTERM')
+      // The backend is spawned with detached:false, so no process group exists
+      // and the old process.kill(-pid, ...) targeted a group that never was —
+      // an ESRCH no-op that left the backend running. Kill the child directly,
+      // escalating to SIGKILL after a short grace period.
+      const proc = backendProcess
+      const pid = proc.pid
+      try { proc.kill('SIGTERM') } catch { /* already gone */ }
+      setTimeout(() => {
+        try {
+          if (pid && process.kill(pid, 0)) process.kill(pid, 'SIGKILL')
+        } catch { /* exited already */ }
+      }, 2000)
     }
   } catch { /* already dead */ }
   backendProcess = null
