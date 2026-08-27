@@ -244,13 +244,34 @@ function startBackend(harnessRoot) {
   console.log(`[dsh-desktop] Starting: ${runner.cmd} ${runner.args.join(' ')}`)
   _log(`startBackend: ${runner.cmd} ${runner.args.join(' ')}`)
 
+  // Pipe backend output into the debug log when it is active, so startup
+  // failures (missing deps, build errors, port conflicts) become diagnosable
+  // instead of surfacing only as a 180s readiness timeout. Piping is skipped
+  // otherwise to keep the child's pipes closed.
+  const captureOutput = !!_logStream
   backendProcess = spawn(runner.cmd, runner.args, {
     cwd: harnessRoot,
     windowsHide: true,
-    stdio: 'ignore',
+    stdio: captureOutput ? ['ignore', 'pipe', 'pipe'] : 'ignore',
     detached: false,
     env: { ...process.env }
   })
+
+  if (captureOutput) {
+    let loggedLines = 0
+    const pump = (streamName) => (chunk) => {
+      for (const line of String(chunk).split(/\r?\n/)) {
+        if (!line.trim()) continue
+        loggedLines++
+        // Full output early on; afterwards only error-looking lines to cap log size
+        if (loggedLines <= 200 || /error|failed|exception|EADDRINUSE|EPERM/i.test(line)) {
+          _log(`backend ${streamName}: ${line}`)
+        }
+      }
+    }
+    backendProcess.stdout.on('data', pump('stdout'))
+    backendProcess.stderr.on('data', pump('stderr'))
+  }
 
   backendProcess.on('exit', (code) => {
     if (!isQuitting) {
