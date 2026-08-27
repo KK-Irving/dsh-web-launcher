@@ -692,6 +692,7 @@ function     createSplashWindow() {
     center: true,
     show: true,
     backgroundColor: '#1a1a2e',
+    title: 'DSH 启动中…',
     webPreferences: {
       nodeIntegration: true,
       contextIsolation: false
@@ -708,13 +709,45 @@ function sendSplashStatus(data) {
   }
 }
 
+// ── Startup crash journal ────────────────────────────────────────────────────
+// _log() is opt-in via debugLog; when startup breaks on a normal install there
+// is nothing to look at. This appends unconditionally (best-effort) so every
+// early failure leaves a trace next to the other logs.
+function startupLogDir() {
+  try { return getLogDir() } catch { return process.cwd() }
+}
+function journal(msg) {
+  try {
+    const dir = startupLogDir()
+    require('fs').mkdirSync(dir, { recursive: true })
+    require('fs').appendFileSync(
+      require('path').join(dir, 'startup-crash.log'),
+      `[${new Date().toISOString()}] ${msg}\n`
+    )
+  } catch { /* never let diagnostics break the app */ }
+}
+
+/** setTimeout wrapper that reports instead of silently swallowing failures. */
+function safeTimeout(fn, ms) {
+  setTimeout(() => {
+    try { fn() } catch (err) {
+      journal('deferred-step failed: ' + (err && err.stack || err))
+      console.error('[dsh-desktop] deferred step failed:', err)
+    }
+  }, ms)
+}
+
 function closeSplashAndShowMain() {
   _log('closeSplashAndShowMain')
+  // Create the main window BEFORE closing the splash: if creation fails the
+  // splash stays on screen as feedback and the failure lands in the journal,
+  // instead of leaving a headless process.
+  const win = createMainWindow()
   if (splashWindow && !splashWindow.isDestroyed()) {
     splashWindow.close()
     splashWindow = null
   }
-  createMainWindow()
+  return win
 }
 
 /**
@@ -756,7 +789,15 @@ function createMainWindow() {
   // whether the tab bar or a BrowserView holds keyboard focus — plain
   // window-level keydown listeners can't see keys typed inside BrowserViews.
   // All root items are marked visible:false, so no menu bar is rendered.
-  registerAcceleratorMenu()
+  try {
+    registerAcceleratorMenu()
+  } catch (err) {
+    // Menu failure must never take the whole window down with it — degrade to
+    // no accelerators instead of an unshippable client.
+    journal('registerAcceleratorMenu FAILED (continuing without shortcuts): ' + (err && err.stack || err))
+    console.error('[dsh-desktop] accelerator menu registration failed:', err)
+  }
+  journal('menu ok')
 
   const saved = store.get('windowBounds') || {}
 
@@ -791,6 +832,7 @@ function createMainWindow() {
   const restoreMaximized = !!saved.isMaximized
 
   mainWindow = new BrowserWindow(windowOptions)
+  journal('main window created bounds=' + JSON.stringify(mainWindow.getBounds()))
 
   // Load the tab bar shell (lightweight HTML)
   mainWindow.loadFile(path.join(__dirname, '..', 'assets', 'shell.html'))
@@ -799,6 +841,7 @@ function createMainWindow() {
   if (!store.get('startMinimized')) {
     if (restoreMaximized) mainWindow.maximize()
     mainWindow.show()
+    journal('main window shown restoreMaximized=' + restoreMaximized)
   }
 
   // Save window bounds on resize/move
@@ -839,6 +882,9 @@ function createMainWindow() {
 function saveBounds() {
   if (!mainWindow || mainWindow.isDestroyed()) return
   const bounds = mainWindow.getBounds()
+  // Never persist garbage measurements (e.g. transient/composited states can
+  // report tiny or zeroed rects); restoring those would strand the window.
+  if (!(bounds.width >= 500 && bounds.height >= 400)) return
   const prev = store.get('windowBounds') || {}
   store.set('windowBounds', {
     ...prev,
@@ -1761,6 +1807,20 @@ function notifyNewtabTheme() {
 // ── App Lifecycle ────────────────────────────────────────────────────────────
 
 initLogger()
+
+// Last-resort diagnostics: every early failure must leave a trace even with
+// debugLog off — opaque "nothing happens" reports are undiagnosable.
+process.on('uncaughtException', (err) => {
+  journal('uncaughtException: ' + (err && err.stack || err))
+  console.error('[dsh-desktop] uncaughtException:', err)
+})
+process.on('unhandledRejection', (reason) => {
+  const detail = reason && reason.stack || String(reason)
+  journal('unhandledRejection: ' + detail)
+  console.error('[dsh-desktop] unhandledRejection:', reason)
+})
+
+journal('--- launch v' + app.getVersion() + ' pid=' + process.pid + ' ---')
 _log('before requestSingleInstanceLock')
 const gotTheLock = app.requestSingleInstanceLock()
 _log('gotTheLock=' + gotTheLock)
@@ -1772,84 +1832,101 @@ if (!gotTheLock) {
   })
 
   app.on('ready', async () => {
-    _log('ready event fired')
-    // Register IPC for tab bar
-    registerTabIpc()
-    _log('registerTabIpc done')
+    try {
+      _log('ready event fired')
+      // Register IPC for tab bar
+      registerTabIpc()
+      journal('registerTabIpc ok')
+      _log('registerTabIpc done')
 
-    // Load Chrome extensions
-    await loadExtensions()
-    _log('loadExtensions done')
+      // Load Chrome extensions
+      await loadExtensions()
+      journal('loadExtensions ok')
+      _log('loadExtensions done')
 
-    // Create tray
-    _log('before createTray')
-    createTray()
-    _log('createTray done')
-    updateTrayStatus('starting')
-
-    // Register global shortcut
-    registerGlobalShortcut()
-
-    // Init auto-updater
-    initAutoUpdater()
-    _log('initAutoUpdater done')
-
-    // Resolve harness root
-    const harnessRoot = resolveHarnessRoot()
-    _log('harnessRoot=' + (harnessRoot || 'NULL'))
-
-    if (!harnessRoot) {
-      updateTrayStatus('no repo')
-      createMainWindow()
-      dialog.showErrorBox(
-        t('notFoundTitle'),
-        t('notFoundMessage')
-      )
-      return
-    }
-
-    store.set('harnessRoot', harnessRoot)
-    console.log(`[dsh-desktop] Harness root: ${harnessRoot}`)
-
-    // Create splash window immediately for user feedback
-    createSplashWindow()
-
-    // Check if service is already running
-    const alreadyRunning = await checkWebReady()
-
-    if (alreadyRunning) {
-      backendAdopted = true
-      updateTrayStatus('running')
-      _log('adopted existing service on port')
-      console.log('[dsh-desktop] Adopted existing DSH web service')
-      sendSplashStatus({ status: t('splashConnected'), progress: 100 })
-      setTimeout(() => { closeSplashAndShowMain() }, 800)
-    } else if (store.get('autoStartBackend')) {
-      sendSplashStatus({ phase: 'starting', lang: t.lang })
-      startBackend(harnessRoot)
+      // Create tray
+      _log('before createTray')
+      createTray()
+      journal('createTray ok')
+      _log('createTray done')
       updateTrayStatus('starting')
 
-      sendSplashStatus({ phase: 'waiting', lang: t.lang })
-      const ready = await waitForReady()
-      _log('waitForReady result: ' + ready)
-      if (ready) {
-        updateTrayStatus('running')
-        sendSplashStatus({ status: t('splashReady'), progress: 100 })
-        setTimeout(() => { closeSplashAndShowMain() }, 500)
-      } else {
-        updateTrayStatus('starting')
-        sendSplashStatus({ phase: 'slow', lang: t.lang })
-        // Don't block — open main window anyway, backend may come up later
-        setTimeout(() => { closeSplashAndShowMain() }, 2000)
-      }
-    } else {
-      // Auto-start disabled — just open the window
-      sendSplashStatus({ status: t('splashManualMode'), progress: 100 })
-      setTimeout(() => { closeSplashAndShowMain() }, 1000)
-    }
+      // Register global shortcut
+      registerGlobalShortcut()
 
-    // Start health monitor
-    startHealthMonitor()
+      // Init auto-updater
+      initAutoUpdater()
+      _log('initAutoUpdater done')
+
+      // Resolve harness root
+      const harnessRoot = resolveHarnessRoot()
+      journal('harnessRoot=' + (harnessRoot || 'NULL'))
+      _log('harnessRoot=' + (harnessRoot || 'NULL'))
+
+      if (!harnessRoot) {
+        updateTrayStatus('no repo')
+        createMainWindow()
+        dialog.showErrorBox(
+          t('notFoundTitle'),
+          t('notFoundMessage')
+        )
+        return
+      }
+
+      store.set('harnessRoot', harnessRoot)
+      console.log(`[dsh-desktop] Harness root: ${harnessRoot}`)
+
+      // Create splash window immediately for user feedback
+      createSplashWindow()
+      journal('splash created')
+
+      // Check if service is already running
+      const alreadyRunning = await checkWebReady()
+      journal('checkWebReady=' + alreadyRunning)
+
+      if (alreadyRunning) {
+        backendAdopted = true
+        updateTrayStatus('running')
+        _log('adopted existing service on port')
+        console.log('[dsh-desktop] Adopted existing DSH web service')
+        sendSplashStatus({ status: t('splashConnected'), progress: 100 })
+        safeTimeout(() => { closeSplashAndShowMain() }, 800)
+      } else if (store.get('autoStartBackend')) {
+        sendSplashStatus({ phase: 'starting', lang: t.lang })
+        startBackend(harnessRoot)
+        updateTrayStatus('starting')
+
+        sendSplashStatus({ phase: 'waiting', lang: t.lang })
+        const ready = await waitForReady()
+        _log('waitForReady result: ' + ready)
+        if (ready) {
+          updateTrayStatus('running')
+          sendSplashStatus({ status: t('splashReady'), progress: 100 })
+          safeTimeout(() => { closeSplashAndShowMain() }, 500)
+        } else {
+          updateTrayStatus('starting')
+          sendSplashStatus({ phase: 'slow', lang: t.lang })
+          // Don't block — open main window anyway, backend may come up later
+          safeTimeout(() => { closeSplashAndShowMain() }, 2000)
+        }
+      } else {
+        // Auto-start disabled — just open the window
+        sendSplashStatus({ status: t('splashManualMode'), progress: 100 })
+        safeTimeout(() => { closeSplashAndShowMain() }, 1000)
+      }
+
+      // Start health monitor
+      startHealthMonitor()
+    } catch (err) {
+      // Startup is fully broken — record it, then surface to the user instead
+      // of leaving a headless zombie process.
+      journal('READY FAILED: ' + (err && err.stack || err))
+      console.error('[dsh-desktop] startup failed:', err)
+      try {
+        dialog.showErrorBox('DSH Desktop 启动失败 / Startup failed', String(err && err.stack || err))
+      } catch { /* no dialog possible */ }
+      app.quit()
+    }
   })
 
   app.on('window-all-closed', () => {
