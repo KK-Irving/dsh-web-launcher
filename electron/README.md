@@ -97,12 +97,12 @@ The built app includes auto-update support via GitHub Releases (electron-updater
 
 | Shortcut                          | Action                                           |
 | --------------------------------- | ------------------------------------------------ |
-| `Alt+D`                         | Toggle window (global, works when app is hidden) |
-| `Ctrl+T`                        | New tab (opens the local New Tab page)           |
-| `Ctrl+W`                        | Close current tab                                |
-| `Ctrl+R`                        | Reload current tab                               |
-| `Ctrl+Tab` / `Ctrl+Shift+Tab` | Next / previous tab (wrap-around)                |
-| `F12`                           | Toggle DevTools for the current tab              |
+| `Alt+D`                           | Toggle window (global, works when app is hidden) |
+| `Ctrl+T`                          | New tab (opens the local New Tab page)           |
+| `Ctrl+W`                          | Close current tab                                |
+| `Ctrl+R`                          | Reload current tab                               |
+| `Ctrl+Tab` / `Ctrl+Shift+Tab`     | Next / previous tab (wrap-around)                |
+| `F12`                             | Toggle DevTools for the current tab              |
 | Middle-click tab                  | Close that tab                                   |
 
 Shortcuts work regardless of which view has keyboard focus — they are registered as hidden application-menu accelerators (no menu bar is rendered).

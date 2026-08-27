@@ -87,11 +87,6 @@
     .info-pill .il { color: var(--text-3); }
     .info-pill .iv { color: var(--text-2); font-family: 'SF Mono','Cascadia Code',Consolas,monospace; font-size: 11px; }
 
-    .shortcut-row { display: flex; align-items: center; justify-content: space-between; padding: 6px 0; font-size: 12px; border-bottom: 1px solid var(--border); }
-    .shortcut-row:last-child { border-bottom: none; }
-    .shortcut-row .sk-label { color: var(--text-3); }
-    .shortcut-row kbd { font-family: 'SF Mono','Cascadia Code',Consolas,monospace; font-size: 10px; color: var(--text-2); background: var(--surface); border: 1px solid var(--border); border-radius: 4px; padding: 2px 6px; }
-
     .tip { font-size: 12px; color: var(--text-3); padding: 10px 0; border-top: 1px solid var(--border); display: flex; align-items: flex-start; gap: 8px; }
     .tip .ti { font-size: 14px; line-height: 1.2; }
     .footer { margin-top: auto; padding-top: 20px; font-size: 10px; color: var(--text-3); opacity: 0.6; display: flex; gap: 16px; align-items: center; }
@@ -147,15 +142,6 @@
     </div>
 
     <div>
-      <div class="section-header"><span class="section-label" data-i18n="secShortcuts">快捷键</span></div>
-      <div class="shortcut-row"><span class="sk-label" data-i18n="skNewTab">新建标签页</span><kbd>Ctrl + T</kbd></div>
-      <div class="shortcut-row"><span class="sk-label" data-i18n="skCloseTab">关闭标签页</span><kbd>Ctrl + W</kbd></div>
-      <div class="shortcut-row"><span class="sk-label" data-i18n="skToggle">显示 / 隐藏窗口</span><kbd>Alt + D</kbd></div>
-      <div class="shortcut-row"><span class="sk-label" data-i18n="skRefresh">刷新页面</span><kbd>Ctrl + R</kbd></div>
-      <div class="shortcut-row"><span class="sk-label" data-i18n="skDevTools">开发者工具</span><kbd>F12</kbd></div>
-    </div>
-
-    <div>
       <div class="section-header"><span class="section-label" data-i18n="secStatus">系统状态</span></div>
       <div class="info-list">
         <div class="info-pill"><span class="dot" id="backendDot"></span><span class="il" data-i18n="backend">后端</span><span class="iv" id="backendStatus">--</span></div>
@@ -193,10 +179,9 @@
 
     const S = {
       zh: {
-        secActions:'快捷操作', secSites:'常用网站', secShortcuts:'快捷键', secStatus:'系统状态',
+        secActions:'快捷操作', secSites:'常用网站', secStatus:'系统状态',
         newSession:'新建会话', logs:'日志', restart:'重启服务',
         checkHarness:'Harness 更新', checkUpdate:'客户端更新', loadExt:'加载扩展', manageExt:'管理扩展',
-        skNewTab:'新建标签页', skCloseTab:'关闭标签页', skToggle:'显示 / 隐藏窗口', skRefresh:'刷新页面', skDevTools:'开发者工具',
         backend:'后端', clientVer:'版本', servicePort:'端口', harnessPath:'仓库',
         running:'运行中', stopped:'已停止', starting:'启动中',
         morning:'早上好', afternoon:'下午好', evening:'晚上好', night:'夜深了',
@@ -204,10 +189,9 @@
         addNamePh:'名称', addUrlPh:'https://...',
       },
       en: {
-        secActions:'ACTIONS', secSites:'SITES', secShortcuts:'SHORTCUTS', secStatus:'STATUS',
+        secActions:'ACTIONS', secSites:'SITES', secStatus:'STATUS',
         newSession:'New Session', logs:'Logs', restart:'Restart',
         checkHarness:'Harness Update', checkUpdate:'Client Update', loadExt:'Load Extension', manageExt:'Manage',
-        skNewTab:'New Tab', skCloseTab:'Close Tab', skToggle:'Toggle Window', skRefresh:'Refresh', skDevTools:'Dev Tools',
         backend:'Backend', clientVer:'Version', servicePort:'Port', harnessPath:'Repo',
         running:'Running', stopped:'Stopped', starting:'Starting',
         morning:'Good morning', afternoon:'Good afternoon', evening:'Good evening', night:'Late night',
