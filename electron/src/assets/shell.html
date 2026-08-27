@@ -93,29 +93,6 @@
     }
     #new-tab-btn:hover { background: #313244; color: #cdd6f4; }
 
-    #window-controls {
-      display: flex;
-      gap: 4px;
-      margin-left: 8px;
-      -webkit-app-region: no-drag;
-    }
-
-    .win-btn {
-      width: 28px;
-      height: 28px;
-      border-radius: 6px;
-      background: transparent;
-      border: none;
-      color: #6c7086;
-      font-size: 13px;
-      cursor: pointer;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-    }
-    .win-btn:hover { background: #313244; color: #cdd6f4; }
-    .win-btn.close:hover { background: #f38ba8; color: #1e1e2e; }
-
     #content {
       flex: 1;
       height: calc(100% - 40px);
@@ -125,12 +102,9 @@
 </head>
 <body>
   <div id="tab-bar">
-    <div id="tabs-container"></div>
-    <button id="new-tab-btn" title="新建标签页">+</button>
-    <div id="window-controls">
-      <button class="win-btn" id="btn-min" title="最小化">─</button>
-      <button class="win-btn" id="btn-max" title="最大化">□</button>
-      <button class="win-btn close" id="btn-close" title="关闭">✕</button>
+    <div id="tabs-container">
+      <!-- Lives inside the tab strip so it always follows the last open tab -->
+      <button id="new-tab-btn" title="新建标签页">+</button>
     </div>
   </div>
   <div id="content"></div>
@@ -141,17 +115,14 @@
 
     // i18n: titles update based on language config
     const i18n = {
-      zh: { newTab: '新建标签页', minimize: '最小化', maximize: '最大化', close: '关闭' },
-      en: { newTab: 'New Tab', minimize: 'Minimize', maximize: 'Maximize', close: 'Close' }
+      zh: { newTab: '新建标签页' },
+      en: { newTab: 'New Tab' }
     }
     // Apply locale from config (async, fallback to zh)
     desktop.getConfig('language').then((lang) => {
       const s = i18n[lang] || i18n.zh
       document.documentElement.lang = lang || 'zh'
       document.getElementById('new-tab-btn').title = s.newTab
-      document.getElementById('btn-min').title = s.minimize
-      document.getElementById('btn-max').title = s.maximize
-      document.getElementById('btn-close').title = s.close
     })
 
     const tabsContainer = document.getElementById('tabs-container')
@@ -180,17 +151,15 @@
         })
         tabsContainer.appendChild(el)
       }
+      // innerHTML wipe removed the button too — re-append it so it always
+      // sits right after the last open tab (leftmost when no tabs exist).
+      tabsContainer.appendChild(newTabBtn)
     })
 
     // New tab
     newTabBtn.addEventListener('click', () => {
       desktop.newTab()
     })
-
-    // Window controls
-    document.getElementById('btn-min').addEventListener('click', () => desktop.minimize())
-    document.getElementById('btn-max').addEventListener('click', () => desktop.maximize())
-    document.getElementById('btn-close').addEventListener('click', () => desktop.close())
 
     // Keyboard shortcuts
     document.addEventListener('keydown', (e) => {

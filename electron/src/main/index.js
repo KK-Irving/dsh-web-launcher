@@ -361,14 +361,22 @@ function createTab(url = WEB_URL) {
 
   // Watch for DSH theme changes via injected MutationObserver
   view.webContents.on('dom-ready', () => {
+    // DSH applies themes by writing html.style.colorScheme and toggling
+    // body[data-ds-dark-theme]. Tab renderers are sandboxed (no `require`),
+    // so report through the dshDesktop preload bridge instead.
     view.webContents.executeJavaScript(`
       (function() {
         if (window.__dshThemeObserver) return;
-        const { ipcRenderer } = require('electron');
+        let lastScheme = null;
         function reportTheme() {
-          const scheme = document.documentElement.style.colorScheme || 
-            (document.body && document.body.hasAttribute('data-ds-dark-theme') ? 'dark' : 'light');
-          ipcRenderer.send('dsh-theme-changed', scheme);
+          const scheme = (document.body && document.body.hasAttribute('data-ds-dark-theme'))
+            ? 'dark'
+            : (document.documentElement.style.colorScheme === 'dark' ? 'dark' : 'light');
+          if (scheme === lastScheme) return;
+          lastScheme = scheme;
+          if (window.dshDesktop && window.dshDesktop.reportTheme) {
+            window.dshDesktop.reportTheme(scheme);
+          }
         }
         const observer = new MutationObserver(reportTheme);
         observer.observe(document.documentElement, { attributes: true, attributeFilter: ['style'] });
@@ -441,8 +449,8 @@ function closeTab(id) {
       const newIndex = Math.min(index, tabs.length - 1)
       activateTab(tabs[newIndex].id)
     } else {
-      // Last tab closed - create a new one
-      createTab()
+      // Last tab closed - open the local New Tab page (consistent with the "+" button)
+      createTab('newtab')
     }
   }
 
@@ -825,7 +833,7 @@ function updateTrayMenu() {
     { label: statusLabel, enabled: false },
     { type: 'separator' },
     { label: t('trayOpenWindow'), click: () => showWindow() },
-    { label: t('trayNewTab'), click: () => { showWindow(); createTab() } },
+    { label: t('trayNewTab'), click: () => { showWindow(); createTab('newtab') } },
     { label: t('trayRestartBackend'), click: () => restartBackend() },
     { label: t.lang === 'zh' ? '检查 Harness 更新' : 'Check Harness Update', click: () => checkAndPromptHarnessUpdate() },
     { label: t.lang === 'zh' ? '检查更新' : 'Check for Updates', click: () => checkForAllUpdates() },

@@ -46,6 +46,12 @@ contextBridge.exposeInMainWorld('dshDesktop', {
   getLanguage: () => ipcRenderer.invoke('get-config', 'language'),
   setLanguage: (lang) => ipcRenderer.invoke('set-language', lang),
 
+  // ── Theme Sync ─────────────────────────────────────────────────────────────
+  // DSH Web pages are sandboxed (no direct ipcRenderer); they use this bridge
+  // to report their resolved color scheme so the main process can persist it
+  // and propagate the change to all New Tab pages.
+  reportTheme: (scheme) => ipcRenderer.send('dsh-theme-changed', scheme),
+
   // ── Harness Update ─────────────────────────────────────────────────────────
   checkHarnessUpdate: () => ipcRenderer.invoke('check-harness-update'),
   updateHarness: () => ipcRenderer.invoke('update-harness'),
