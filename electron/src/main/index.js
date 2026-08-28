@@ -2066,11 +2066,10 @@ function notifyNewtabTheme() {
         openLogFolder()
         break
       case 'restart-backend':
-        stopBackend()
-        setTimeout(() => {
-          const root = store.get('harnessRoot')
-          if (root) startBackend(root)
-        }, 1000)
+        // Same hardened flow as the tray entry: port-free wait, ready wait,
+        // auth cookie re-mint, tab reload and user feedback. The old inline
+        // stop/start here skipped all of that and raced the port.
+        restartBackend()
         break
       case 'check-harness-update':
         checkAndPromptHarnessUpdate()
