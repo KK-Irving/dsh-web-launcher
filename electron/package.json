@@ -59,7 +59,11 @@
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
-      "shortcutName": "DeepSeek Harness"
+      "shortcutName": "DeepSeek Harness",
+      "artifactName": "DeepSeek-Harness-Setup-${version}.${ext}"
+    },
+    "portable": {
+      "artifactName": "DeepSeek-Harness-Portable-${version}.${ext}"
     },
     "publish": {
       "provider": "github",

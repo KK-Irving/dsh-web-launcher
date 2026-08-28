@@ -94,7 +94,7 @@ The built app includes auto-update support via GitHub Releases (electron-updater
 1. Bump `version` in `electron/package.json` and keep the root `VERSION` file in sync
 2. Tag it: `git tag vX.Y.Z && git push --tags`
 3. Build with `pnpm build:win`, then create a GitHub Release with the tag
-4. Attach **all** artifacts from `electron/dist/`: installer `.exe`, portable `.exe`, the matching `.blockmap`, and `latest.yml` — without `latest.yml` + blockmap running clients cannot detect or delta-update
+4. Attach **all** artifacts from `electron/dist/`: installer `.exe`, portable `.exe`, the matching `.blockmap`, and `latest.yml` — without `latest.yml` + blockmap running clients cannot detect or delta-update. Artifact names are space-free on purpose (`DeepSeek-Harness-Setup-x.y.z.exe`): GitHub asset names must match `latest.yml` **byte-for-byte** or downloads 404. Do not retype or "prettify" filenames when uploading (GitHub's web upload silently converts spaces to dots — with dash-based names this cannot happen)
 5. Running apps will detect the new release automatically
 
 ## Keyboard Shortcuts

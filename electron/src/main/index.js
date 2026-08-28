@@ -709,6 +709,7 @@ let autoUpdater = null
 let clientUpdWindow = null
 let clientUpdFoundVersion = null
 let clientUpdStage = 'check' // 'check' | 'download' — for error step mapping
+let clientUpdDownloadRequested = false // silent-path error surfacing guard
 let lastProgressSentAt = 0
 
 function createClientUpdateWindow() {
@@ -747,7 +748,7 @@ function closeClientUpdateWindow() {
  * purpose-built window: check GitHub → confirm download (in-window) → live
  * percentage → Restart & Install. Every state is visible; nothing is silent.
  */
-async function startClientUpdateFlow() {
+async function startClientUpdateFlow(autoStartDownload = false) {
   if (!app.isPackaged || !autoUpdater) {
     // Dev/source builds keep their flows (git-pull launcher update / GitHub link)
     await checkForAllUpdates()
@@ -770,6 +771,7 @@ async function startClientUpdateFlow() {
         subtitle: t('cliFoundSub', v),
         message: t('cliFoundSub', v)
       })
+      if (autoStartDownload) handleClientUpdateAction({ action: 'download' })
     }
   } catch (err) {
     journal('client update check failed: ' + (err && err.stack || err))
@@ -782,12 +784,14 @@ function handleClientUpdateAction(payload) {
   if (action === 'download') {
     const v = clientUpdFoundVersion || ''
     clientUpdStage = 'download'
+    clientUpdDownloadRequested = true
     sendClientUI({ phase: 'downloading', percent: 0, subtitle: t('cliStartDlLog', v), log: t('cliStartDlLog', v) })
     autoUpdater.downloadUpdate().catch((err) => {
       journal('client update download failed: ' + (err && err.stack || err))
       sendClientUI({ phase: 'error', failedStep: 2, errorMessage: String(err.message || err) })
     })
   } else if (action === 'skip') {
+    clientUpdDownloadRequested = false
     clientUpdStage = 'check'
     sendClientUI({ phase: 'skipped', message: t('cliSkippedSub') })
   } else if (action === 'install') {
@@ -826,8 +830,10 @@ function     initAutoUpdater() {
         defaultId: 0
       }).then(({ response }) => {
         if (response === 0) {
-          autoUpdater.downloadUpdate()
-          if (tray) tray.setToolTip('DeepSeek Harness (downloading update...)')
+          // Route through the dedicated window via the same flow the New Tab
+          // button uses: progress, readiness and errors are all visible there.
+          // A bare downloadUpdate() here used to run fully silent.
+          startClientUpdateFlow(true)
         }
       })
     })
@@ -852,6 +858,7 @@ function     initAutoUpdater() {
 
     autoUpdater.on('update-downloaded', (info) => {
       console.log(`[dsh-desktop] Update downloaded: ${info.version}`)
+      clientUpdDownloadRequested = false
       if (clientUpdWinOpen()) {
         sendClientUI({
           phase: 'ready', version: info.version,
@@ -883,6 +890,14 @@ function     initAutoUpdater() {
           failedStep: clientUpdStage === 'download' ? 2 : 1,
           errorMessage: String(err.message || err)
         })
+        return
+      }
+      // Silent path (window closed): surface failures only when a download
+      // was actually requested — routine background-check errors (offline,
+      // feed hiccups) must not nag on every launch.
+      if (clientUpdDownloadRequested) {
+        clientUpdDownloadRequested = false
+        dialog.showErrorBox(t('updateFailedTitle'), String(err.message || err))
       }
     })
 
