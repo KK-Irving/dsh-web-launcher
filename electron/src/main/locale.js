@@ -128,6 +128,8 @@ const strings = {
     cliReadySub: 'v{0} 下载完成，随时可以重启安装',
     cliReadyLog: '安装包已就绪，将关闭应用后自动运行安装程序',
     cliUpToDateDone: '当前已是最新版本 v{0}',
+    webAuthRequiredTitle: '需要重新认证',
+    webAuthRequiredMsg: '当前 Web 服务由外部启动，客户端拿不到认证令牌。\n请通过托盘菜单「重启 Web 服务」让客户端接管后端，即可自动完成登录。',
 
     // Dialogs - Harness Update
     harnessCheckUpdate: '检查 Harness 更新',
@@ -276,6 +278,8 @@ const strings = {
     cliReadySub: 'v{0} downloaded — restart to install whenever you like',
     cliReadyLog: 'Installer is ready; the app will close and run it automatically',
     cliUpToDateDone: 'Already on the latest version v{0}',
+    webAuthRequiredTitle: 'Re-authentication required',
+    webAuthRequiredMsg: 'The running web service was started externally, so the client has no auth token.\nUse the tray menu "Restart Web Service" to let the client own the backend and sign in automatically.',
 
     // Dialogs - Harness Update
     harnessCheckUpdate: 'Check Harness Update',

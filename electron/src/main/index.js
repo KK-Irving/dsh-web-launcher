@@ -10,7 +10,7 @@
  *   - Auto-update via electron-updater (GitHub Releases)
  */
 
-const { app, BrowserWindow, BrowserView, Tray, Menu, nativeImage, shell, globalShortcut, dialog, session, ipcMain } = require('electron')
+const { app, BrowserWindow, BrowserView, Tray, Menu, nativeImage, shell, globalShortcut, dialog, session, ipcMain, net } = require('electron')
 const path = require('path')
 const { spawn } = require('child_process')
 const http = require('http')
@@ -204,11 +204,28 @@ function checkWebReady() {
       let body = ''
       res.on('data', (chunk) => { body += chunk })
       res.on('end', () => {
-        resolve(res.statusCode === 200 && body.includes(DSH_BOOT_MARKER))
+        // 200 + boot marker = unauthenticated DSH (older builds); the auth
+        // wall added later answers 401 with its own text — either proves a
+        // live DSH web server. A 200 without the marker is someone else.
+        if (res.statusCode === 200) resolve(body.includes(DSH_BOOT_MARKER))
+        else if (res.statusCode === 401) resolve(body.includes('authentication required'))
+        else resolve(false)
       })
     })
     req.on('error', () => resolve(false))
     req.on('timeout', () => { req.destroy(); resolve(false) })
+  })
+}
+
+/** Cookie-authenticated probe: true only when the server serves the app (200). */
+function probeWebAuthOk() {
+  return new Promise((resolve) => {
+    try {
+      const req = net.request({ url: WEB_URL, useSessionCookies: true })
+      req.on('response', (res) => { res.resume(); resolve(res.statusCode === 200) })
+      req.on('error', () => resolve(false))
+      req.end()
+    } catch { resolve(false) }
   })
 }
 
@@ -219,6 +236,70 @@ async function waitForReady(timeoutMs = STARTUP_TIMEOUT_MS) {
     await new Promise(r => setTimeout(r, 1000))
   }
   return await checkWebReady()
+}
+
+// ── Web authentication (DSH browser-session token/cookie) ────────────────────
+// DSH now requires browser auth: the URL printed by `dsh web` carries a
+// per-process ?token= that mints a durable HttpOnly cookie (default 30 days,
+// signed with the harness home's persisted secret). The client consumes the
+// token once via a hidden window in the default session; every tab (which
+// shares that session) is then authenticated without further work.
+
+let webAuthTokenUrl = null
+let webAuthMinting = null
+
+/** Wait for the backend to print its token URL, then mint the session cookie. */
+function ensureWebAuthCookie(timeoutMs = 12000) {
+  if (webAuthMinting) return webAuthMinting
+  webAuthMinting = new Promise((resolve) => {
+    const started = Date.now()
+    const poll = () => {
+      if (webAuthTokenUrl) {
+        mintWebAuthCookie(webAuthTokenUrl).then(resolve)
+        return
+      }
+      if (Date.now() - started > timeoutMs || !backendProcess) { resolve(); return }
+      setTimeout(poll, 250)
+    }
+    poll()
+  }).finally(() => { webAuthMinting = null })
+  return webAuthMinting
+}
+
+function mintWebAuthCookie(authUrl) {
+  return new Promise((resolve) => {
+    let settled = false
+    const win = new BrowserWindow({
+      show: false, width: 420, height: 300,
+      autoHideMenuBar: true,
+      webPreferences: { nodeIntegration: false, contextIsolation: true }
+    })
+    const finish = (minted) => {
+      if (settled) return
+      settled = true
+      try { win.destroy() } catch { /* already gone */ }
+      _log('web auth cookie minted=' + minted)
+      if (minted) reloadDshTabs()
+      resolve()
+    }
+    // did-finish-load on the final '/' (after the 303 + Set-Cookie) means minted
+    win.webContents.on('did-finish-load', () => {
+      if ((win.webContents.getURL() || '').startsWith(WEB_URL)) finish(true)
+    })
+    win.webContents.on('did-fail-load', () => finish(false))
+    win.loadURL(authUrl).catch(() => finish(false))
+    setTimeout(() => finish(false), 8000)
+  })
+}
+
+/** Reload DSH web tabs so they pick up the freshly minted cookie. */
+function reloadDshTabs() {
+  for (const tab of tabs) {
+    if (tab.view && !tab.view.webContents.isDestroyed()
+      && typeof tab.url === 'string' && tab.url.startsWith(WEB_URL)) {
+      tab.view.webContents.loadURL(tab.url).catch(() => { /* view closing */ })
+    }
+  }
 }
 
 function resolveRunner(harnessRoot) {
@@ -244,25 +325,31 @@ function startBackend(harnessRoot) {
   console.log(`[dsh-desktop] Starting: ${runner.cmd} ${runner.args.join(' ')}`)
   _log(`startBackend: ${runner.cmd} ${runner.args.join(' ')}`)
 
-  // Pipe backend output into the debug log when it is active, so startup
-  // failures (missing deps, build errors, port conflicts) become diagnosable
-  // instead of surfacing only as a 180s readiness timeout. Piping is skipped
-  // otherwise to keep the child's pipes closed.
-  const captureOutput = !!_logStream
+  // Always pipe backend output: it is both diagnosability (debug log) and
+  // functionality — the `dsh web: <url>?token=...` line printed by DSH carries
+  // the browser-auth token the client must consume once to mint its cookie.
   backendProcess = spawn(runner.cmd, runner.args, {
     cwd: harnessRoot,
     windowsHide: true,
-    stdio: captureOutput ? ['ignore', 'pipe', 'pipe'] : 'ignore',
+    stdio: ['ignore', 'pipe', 'pipe'],
     detached: false,
     env: { ...process.env }
   })
 
-  if (captureOutput) {
+  {
     let loggedLines = 0
     const pump = (streamName) => (chunk) => {
       for (const line of String(chunk).split(/\r?\n/)) {
         if (!line.trim()) continue
         loggedLines++
+        // Capture the authenticated web URL (first local URL wins; LAN copy ignored)
+        const authMatch = line.match(/^dsh web: (\S+?token=[A-Za-z0-9_-]+)/)
+        if (authMatch) {
+          if (webAuthTokenUrl !== authMatch[1]) {
+            webAuthTokenUrl = authMatch[1]
+            journal('captured dsh web auth url (token rotates per backend start)')
+          }
+        }
         // Full output early on; afterwards only error-looking lines to cap log size
         if (loggedLines <= 200 || /error|failed|exception|EADDRINUSE|EPERM/i.test(line)) {
           _log(`backend ${streamName}: ${line}`)
@@ -1187,6 +1274,8 @@ async function restartBackend() {
   const ready = await waitForReady()
   if (ready) {
     _log('restartBackend: backend ready')
+    // Fresh process = fresh token; re-mint before reloading tabs.
+    await ensureWebAuthCookie()
     updateTrayStatus('running')
     if (tray) tray.setToolTip('DeepSeek Harness')
     // Reload all tabs
@@ -2040,6 +2129,18 @@ if (!gotTheLock) {
         console.log('[dsh-desktop] Adopted existing DSH web service')
         sendSplashStatus({ status: t('splashConnected'), progress: 100 })
         safeTimeout(() => { closeSplashAndShowMain() }, 800)
+        // Adopted services give us no stdout token; the durable cookie from a
+        // previous client-owned run usually still covers us. When it does not,
+        // tell the user exactly how to recover instead of leaving 401 pages.
+        safeTimeout(async () => {
+          if (!(await probeWebAuthOk())) {
+            dialog.showMessageBox(mainWindow || undefined, {
+              type: 'warning',
+              title: t('webAuthRequiredTitle'),
+              message: t('webAuthRequiredMsg')
+            })
+          }
+        }, 2500)
       } else if (store.get('autoStartBackend')) {
         sendSplashStatus({ phase: 'starting', lang: t.lang })
         startBackend(harnessRoot)
@@ -2049,6 +2150,9 @@ if (!gotTheLock) {
         const ready = await waitForReady()
         _log('waitForReady result: ' + ready)
         if (ready) {
+          // Mint the browser-auth cookie before the first tab loads, so the
+          // user never sees the 401 wall on a fresh harness.
+          if (backendProcess) await ensureWebAuthCookie()
           updateTrayStatus('running')
           sendSplashStatus({ status: t('splashReady'), progress: 100 })
           safeTimeout(() => { closeSplashAndShowMain() }, 500)
