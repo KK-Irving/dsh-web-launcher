@@ -131,8 +131,12 @@ const strings = {
     webAuthRequiredTitle: '需要重新认证',
     webAuthRequiredMsg: '当前 Web 服务由外部启动，客户端拿不到认证令牌。\n请通过托盘菜单「重启 Web 服务」让客户端接管后端，即可自动完成登录。',
 
-    // Dialogs - Harness Update
+    // Update window - Harness flow
     harnessCheckUpdate: '检查 Harness 更新',
+    harnessStepPull: 'git pull --ff-only（更新代码）',
+    harnessStepClean: 'pnpm run clean（清除构建残留）',
+    harnessStepInstall: 'pnpm install（更新依赖）',
+    harnessStepBuild: 'pnpm run build（重新构建）',
     harnessCheckFailTitle: '检查更新失败',
     harnessUpToDateTitle: 'Harness 已是最新',
     harnessUpToDateMsg: '当前分支 {0} 已是最新版本（{1}）。',
@@ -281,8 +285,12 @@ const strings = {
     webAuthRequiredTitle: 'Re-authentication required',
     webAuthRequiredMsg: 'The running web service was started externally, so the client has no auth token.\nUse the tray menu "Restart Web Service" to let the client own the backend and sign in automatically.',
 
-    // Dialogs - Harness Update
+    // Update window - Harness flow
     harnessCheckUpdate: 'Check Harness Update',
+    harnessStepPull: 'git pull --ff-only (fetch updates)',
+    harnessStepClean: 'pnpm run clean (clear stale build artifacts)',
+    harnessStepInstall: 'pnpm install (update dependencies)',
+    harnessStepBuild: 'pnpm run build (rebuild)',
     harnessCheckFailTitle: 'Update Check Failed',
     harnessUpToDateTitle: 'Harness Up to Date',
     harnessUpToDateMsg: 'Branch {0} is up to date ({1}).',

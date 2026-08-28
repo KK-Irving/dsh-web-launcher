@@ -1619,8 +1619,20 @@ async function updateHarness(onProgress) {
   }
 
   const steps = []
+  let curStep = 1
   try {
+    // Step names are sent first so the progress page renders the right rows.
+    emit({
+      steps: [
+        t('harnessStepPull'),
+        t('harnessStepClean'),
+        t('harnessStepInstall'),
+        t('harnessStepBuild')
+      ]
+    })
+
     // 1. git pull --ff-only
+    curStep = 1
     emit({ step: 1, state: 'active' })
     _log('step1 git pull --ff-only starting')
     const pull = await execAsync('git', ['pull', '--ff-only'], shellOpts)
@@ -1632,36 +1644,56 @@ async function updateHarness(onProgress) {
     }
     _log('step1 git pull done')
 
-    // 2. pnpm install
-    emit({ step: 2, state: 'active', log: '$ pnpm install' })
-    _log('step2 pnpm install starting')
+    // 2. pnpm run clean — stale build outputs from the previous checkout made
+    //    `pnpm run build` fail after dependency upgrades. Best-effort: an older
+    //    checkout without the clean script must not abort the update.
+    curStep = 2
+    emit({ step: 2, state: 'active', log: '$ pnpm run clean' })
+    _log('step2 pnpm run clean starting')
+    try {
+      const clean = await execAsync('pnpm', ['run', 'clean'], shellOpts)
+      const cleanOutput = (clean.stdout + clean.stderr).trim()
+      if (cleanOutput) steps.push('$ pnpm run clean\n' + cleanOutput.slice(0, 2000))
+      emit({ step: 2, state: 'done', log: 'pnpm run clean OK', isSuccess: true })
+    } catch (cleanErr) {
+      const cleanOutput = ((cleanErr.stdout || '') + (cleanErr.stderr || '')).trim()
+      if (cleanOutput) steps.push('$ pnpm run clean\n' + cleanOutput.slice(0, 2000))
+      emit({ step: 2, state: 'done', log: 'pnpm run clean unavailable — continuing', isSuccess: true })
+    }
+    _log('step2 pnpm run clean done')
+
+    // 3. pnpm install
+    curStep = 3
+    emit({ step: 3, state: 'active', log: '$ pnpm install' })
+    _log('step3 pnpm install starting')
     const install = await execAsync('pnpm', ['install'], shellOpts)
     const installOutput = (install.stdout + install.stderr).trim()
     steps.push('$ pnpm install\n' + installOutput.slice(0, 2000))
-    emit({ step: 2, state: 'done', log: 'pnpm install OK', isSuccess: true })
+    emit({ step: 3, state: 'done', log: 'pnpm install OK', isSuccess: true })
     if (installOutput) {
       installOutput.split('\n').slice(-30).forEach(l => emit({ log: l }))
     }
-    _log('step2 pnpm install done')
+    _log('step3 pnpm install done')
 
-    // 3. pnpm run build
-    emit({ step: 3, state: 'active', log: '$ pnpm run build' })
-    _log('step3 pnpm run build starting')
+    // 4. pnpm run build
+    curStep = 4
+    emit({ step: 4, state: 'active', log: '$ pnpm run build' })
+    _log('step4 pnpm run build starting')
     const build = await execAsync('pnpm', ['run', 'build'], shellOpts)
     const buildOutput = (build.stdout + build.stderr).trim()
     steps.push('$ pnpm run build\n' + buildOutput.slice(0, 2000))
-    emit({ step: 3, state: 'done', log: 'pnpm run build OK', isSuccess: true })
+    emit({ step: 4, state: 'done', log: 'pnpm run build OK', isSuccess: true })
     if (buildOutput) {
       buildOutput.split('\n').slice(-30).forEach(l => emit({ log: l }))
     }
-    _log('step3 pnpm run build done')
+    _log('step4 pnpm run build done')
 
     return { ok: true, output: steps.join('\n\n') }
   } catch (err) {
     const errOutput = (err.stdout || '') + (err.stderr || '') + (err.message || '')
     steps.push('ERROR: ' + errOutput.slice(0, 2000))
-    emit({ state: 'failed', log: 'ERROR: ' + err.message, isError: true })
-    _log('updateHarness FAILED: ' + err.message)
+    emit({ step: curStep, state: 'failed', log: 'ERROR: ' + err.message, isError: true })
+    _log('updateHarness FAILED at step ' + curStep + ': ' + err.message)
     return { ok: false, output: steps.join('\n\n'), error: err.message }
   }
 }

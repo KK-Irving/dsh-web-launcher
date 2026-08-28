@@ -67,23 +67,7 @@
   <div class="title" id="title">Harness 更新中...</div>
   <div class="subtitle" id="subtitle">正在执行更新流程，请勿关闭此窗口</div>
 
-  <div class="steps" id="steps">
-    <div class="step" id="step-1">
-      <div class="icon" id="icon-1">1</div>
-      <div class="step-name">git pull（拉取最新代码）</div>
-      <div class="step-status" id="status-1"></div>
-    </div>
-    <div class="step" id="step-2">
-      <div class="icon" id="icon-2">2</div>
-      <div class="step-name">pnpm install（更新依赖）</div>
-      <div class="step-status" id="status-2"></div>
-    </div>
-    <div class="step" id="step-3">
-      <div class="icon" id="icon-3">3</div>
-      <div class="step-name">pnpm run build（重新构建）</div>
-      <div class="step-status" id="status-3"></div>
-    </div>
-  </div>
+  <div class="steps" id="steps"></div>
 
   <div class="log-box" id="logBox"></div>
 
@@ -94,19 +78,42 @@
   <script>
     const { ipcRenderer } = require('electron');
     const logBox = document.getElementById('logBox');
+    const stepsBox = document.getElementById('steps');
 
-    const stepNames = {
-      1: { zh: 'git pull（拉取最新代码）', en: 'git pull (fetch latest code)' },
-      2: { zh: 'pnpm install（更新依赖）', en: 'pnpm install (update dependencies)' },
-      3: { zh: 'pnpm run build（重新构建）', en: 'pnpm run build (rebuild)' }
-    };
     const statusText = {
       zh: { pending: '等待中', running: '执行中...', done: '完成', failed: '失败' },
       en: { pending: 'Pending', running: 'Running...', done: 'Done', failed: 'Failed' }
     };
 
+    // Step rows are built from the step list the main process sends, so the
+    // window is not hardwired to a specific flow's command sequence.
+    let stepCount = 0;
+    function renderSteps(names) {
+      stepsBox.innerHTML = '';
+      stepCount = names.length;
+      names.forEach((name, idx) => {
+        const n = idx + 1;
+        const row = document.createElement('div');
+        row.className = 'step';
+        row.id = 'step-' + n;
+        const icon = document.createElement('div');
+        icon.className = 'icon';
+        icon.id = 'icon-' + n;
+        icon.textContent = String(n);
+        const label = document.createElement('div');
+        label.className = 'step-name';
+        label.textContent = name;
+        const status = document.createElement('div');
+        status.className = 'step-status';
+        status.id = 'status-' + n;
+        row.appendChild(icon); row.appendChild(label); row.appendChild(status);
+        stepsBox.appendChild(row);
+      });
+    }
+
     function setStep(step, state, lang) {
       const el = document.getElementById('step-' + step);
+      if (!el) return;
       const icon = document.getElementById('icon-' + step);
       const status = document.getElementById('status-' + step);
       el.className = 'step ' + state;
@@ -126,11 +133,8 @@
       if (data.title) document.getElementById('title').textContent = data.title;
       if (data.subtitle) document.getElementById('subtitle').textContent = data.subtitle;
 
-      // Static HTML defaults to Chinese step names; render localized ones
-      for (const n of [1, 2, 3]) {
-        const el = document.querySelector('#step-' + n + ' .step-name');
-        if (el) el.textContent = stepNames[n][lang] || stepNames[n].zh;
-      }
+      // Main process defines the step list (names already localized)
+      if (Array.isArray(data.steps) && data.steps.length) renderSteps(data.steps);
 
       if (data.step) {
         setStep(data.step, data.state || 'active', lang);
