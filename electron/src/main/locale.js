@@ -130,6 +130,8 @@ const strings = {
     cliUpToDateDone: '当前已是最新版本 v{0}',
     webAuthRequiredTitle: '需要重新认证',
     webAuthRequiredMsg: '当前 Web 服务由外部启动，客户端拿不到认证令牌。\n请通过托盘菜单「重启 Web 服务」让客户端接管后端，即可自动完成登录。',
+    webAuthStillFailTitle: '自动登录未完成',
+    webAuthStillFailMsg: '后端已重启，但 Web 认证仍未生效（未捕获到 dsh web 令牌）。\n请开启托盘「调试日志」后再次重启服务，并检查 logs 目录中 startup-crash.log 与当次日志。',
 
     // Update window - Harness flow
     harnessCheckUpdate: '检查 Harness 更新',
@@ -284,6 +286,8 @@ const strings = {
     cliUpToDateDone: 'Already on the latest version v{0}',
     webAuthRequiredTitle: 'Re-authentication required',
     webAuthRequiredMsg: 'The running web service was started externally, so the client has no auth token.\nUse the tray menu "Restart Web Service" to let the client own the backend and sign in automatically.',
+    webAuthStillFailTitle: 'Automatic sign-in incomplete',
+    webAuthStillFailMsg: 'The backend restarted, but web authentication is still inactive (the dsh web token line was never captured).\nEnable the tray "Debug Log", restart the service again, and check startup-crash.log plus that run\'s log in the logs folder.',
 
     // Update window - Harness flow
     harnessCheckUpdate: 'Check Harness Update',

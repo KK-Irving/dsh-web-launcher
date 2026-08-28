@@ -1240,42 +1240,58 @@ function updateTrayStatus(status) {
 
 async function restartBackend() {
   _log('restartBackend called')
+  journal('restart: begin')
   const harnessRoot = resolveHarnessRoot()
   if (!harnessRoot) {
+    journal('restart: no harness root')
     dialog.showErrorBox(t('appName'), t('backendNotFound'))
     _log('restartBackend: no harness root')
     return
   }
 
-  // Show feedback immediately
-  if (tray) tray.setToolTip('DeepSeek Harness (' + t('tipRestartingBackend') + ')')
+  // Show feedback immediately — a cold start (pnpm resolution + server boot)
+  // can take 30-180s with zero UI otherwise, which reads as "nothing happens".
+  if (tray) {
+    tray.setToolTip('DeepSeek Harness (' + t('tipRestartingBackend') + ')')
+    try {
+      tray.displayBalloon({ iconType: 'info', title: t('trayRestartBackend'), content: t('tipRestartingBackend') })
+    } catch { /* balloon is Windows-only */ }
+  }
   updateTrayStatus('starting')
 
   // 1. Stop existing backend (own or adopted)
+  journal('restart: stopping old backend')
   _log('restartBackend: stopping old backend')
   stopBackend()
   backendAdopted = false
 
   // 2. Wait for port to be released (max 20s)
+  journal('restart: waiting for port release')
   _log('restartBackend: waiting for port release')
   const portReleased = await waitForPortFree(DEFAULT_PORT, 20000)
+  journal('restart: port released=' + portReleased)
   if (!portReleased) {
+    journal('restart: port NOT released, force killing')
     _log('restartBackend: port NOT released after 20s, force killing')
     killProcessOnPort(DEFAULT_PORT)
     await new Promise(r => setTimeout(r, 2000))
   }
 
   // 3. Start new backend
+  journal('restart: spawning new backend')
   _log('restartBackend: starting new backend')
   startBackend(harnessRoot)
 
   // 4. Wait for ready (with progress feedback)
   _log('restartBackend: waiting for ready')
   const ready = await waitForReady()
+  journal('restart: ready=' + ready)
   if (ready) {
     _log('restartBackend: backend ready')
     // Fresh process = fresh token; re-mint before reloading tabs.
     await ensureWebAuthCookie()
+    const authOk = await probeWebAuthOk()
+    journal('restart: web auth ok=' + authOk)
     updateTrayStatus('running')
     if (tray) tray.setToolTip('DeepSeek Harness')
     // Reload all tabs
@@ -1284,15 +1300,32 @@ async function restartBackend() {
         tab.view.webContents.loadURL(tab.url)
       }
     }
-    dialog.showMessageBox(mainWindow || undefined, {
-      type: 'info',
-      title: t('backendRestartDoneTitle'),
-      message: t('backendRestartDoneMsg')
-    })
+    if (authOk) {
+      dialog.showMessageBox(mainWindow || undefined, {
+        type: 'info',
+        title: t('backendRestartDoneTitle'),
+        message: t('backendRestartDoneMsg')
+      })
+    } else {
+      // Restarted fine but the auth cookie did not materialize (token line
+      // never captured). Say so instead of letting 401 pages reappear quietly.
+      if (tray) {
+        try { tray.displayBalloon({ iconType: 'warning', title: t('webAuthStillFailTitle'), content: t('updateErrorGeneric') }) } catch { /* windows-only */ }
+      }
+      dialog.showMessageBox(mainWindow || undefined, {
+        type: 'warning',
+        title: t('webAuthStillFailTitle'),
+        message: t('webAuthStillFailMsg')
+      })
+    }
   } else {
     _log('restartBackend: FAILED to become ready')
+    journal('restart: backend failed to become ready')
     updateTrayStatus('error')
-    if (tray) tray.setToolTip('DeepSeek Harness')
+    if (tray) {
+      tray.setToolTip('DeepSeek Harness')
+      try { tray.displayBalloon({ iconType: 'error', title: t('backendRestartFailTitle'), content: t('backendRestartFailMsg') }) } catch { /* windows-only */ }
+    }
     dialog.showErrorBox(
       t('backendRestartFailTitle'),
       t('backendRestartFailMsg')
