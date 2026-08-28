@@ -121,18 +121,12 @@ const strings = {
 
     // Update window - Client flow
     cliTitle: '客户端更新',
-    cliStep1: '检查 GitHub Releases',
-    cliStep2: '下载新版本',
-    cliStep3: '准备安装',
-    cliCheckingSub: '正在连接 GitHub Releases...',
     cliFoundSub: '发现新版本 v{0}',
-    cliAskDownload: '发现新版本 v{0}，是否立即下载？\n（约 80 MB，下载完成后可选择重启安装）',
     cliSkippedSub: '已跳过，可稍后在托盘菜单或新标签页再次检查',
     cliStartDlLog: '开始下载 v{0} ...',
     cliProgressSub: '下载中 {0}% · {1}/{2} MB · {3} MB/s',
     cliReadySub: 'v{0} 下载完成，随时可以重启安装',
     cliReadyLog: '安装包已就绪，将关闭应用后自动运行安装程序',
-    cliInstallBtn: '立即重启安装',
     cliUpToDateDone: '当前已是最新版本 v{0}',
 
     // Dialogs - Harness Update
@@ -275,18 +269,12 @@ const strings = {
 
     // Update window - Client flow
     cliTitle: 'Client Update',
-    cliStep1: 'Check GitHub Releases',
-    cliStep2: 'Download new version',
-    cliStep3: 'Prepare installation',
-    cliCheckingSub: 'Connecting to GitHub Releases...',
     cliFoundSub: 'New version v{0} available',
-    cliAskDownload: 'Found new version v{0}. Download now?\n(~80 MB; you can restart to install once done)',
     cliSkippedSub: 'Skipped — check again anytime from the tray menu or New Tab page',
     cliStartDlLog: 'Downloading v{0} ...',
     cliProgressSub: 'Downloading {0}% · {1}/{2} MB · {3} MB/s',
     cliReadySub: 'v{0} downloaded — restart to install whenever you like',
     cliReadyLog: 'Installer is ready; the app will close and run it automatically',
-    cliInstallBtn: 'Restart & Install',
     cliUpToDateDone: 'Already on the latest version v{0}',
 
     // Dialogs - Harness Update
