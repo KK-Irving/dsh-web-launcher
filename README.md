@@ -1,6 +1,6 @@
 # DeepSeek Harness Web Launcher
 
-> **v2.0.5** — Now includes an [Electron desktop client](#electron-desktop-client) with multi-tab, Chrome extensions, and auto-update.
+> **v2.0.6** — [Electron desktop client](#electron-desktop-client): multi-tab, Chrome extensions, one-click updates, and automatic web-auth sign-in.
 
 One-click Windows launcher for the [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) Web UI. Two modes available:
 
@@ -35,8 +35,10 @@ pnpm start
 - **System tray** — close button minimizes to tray, double-click to restore
 - **Global shortcut** — Alt+D toggles window visibility, F12 toggles DevTools of the active tab
 - **Chrome extensions** — load unpacked extensions via tray menu
-- **Harness auto-update** — one-click `git pull` + `pnpm install` + `pnpm run build` from tray menu
-- **App auto-update** — checks GitHub Releases for new client versions
+- **Web-auth auto sign-in** — captures the token URL printed by `dsh web` and mints the session cookie once, so the 401 wall never appears; adopted external services get an actionable prompt instead
+- **Harness auto-update** — progress window runs four steps: `git pull --ff-only` → `pnpm run clean` → `pnpm install` → `pnpm run build` (clean is best-effort; failures mark the exact step red)
+- **Backend restart** — tray menu, New Tab pill and the update-completion prompt share one hardened flow: port-free wait → readiness wait → cookie re-mint → tab reload, with balloon + dialog feedback throughout
+- **App auto-update** — checks GitHub Releases in a dedicated progress window (check → download → ready)
 - **i18n** — default Chinese, switchable to English in Settings
 - **Sandboxed browsing** — websites opened in tabs are cut off from desktop controls (config writes, backend restart, update flows)
 - **Window state restore** — normal size/position/maximized state survive restarts
@@ -142,7 +144,8 @@ dsh-web-launcher/
 │           ├── shell.html           # Tab bar UI
 │           ├── newtab.html          # New Tab dashboard
 │           ├── splash.html          # Startup splash
-│           └── update-progress.html # Harness/launcher update progress
+│           ├── update-progress.html # Harness update progress (dynamic step list)
+│           └── client-update.html   # Client (app) update progress window
 ├── start-web.ps1                    # PowerShell launcher (tray icon + service control)
 ├── install.ps1                      # PowerShell installer/uninstaller
 ├── refresh-icon.ps1                 # Regenerate dsh-web.ico
@@ -161,6 +164,7 @@ dsh-web-launcher/
 - **The service exits immediately** — open `logs\web-server.err.log`; usually missing `pnpm install` / `pnpm run build` in the checkout.
 - **Port 3080 is occupied by another app** — the launcher treats a ready-but-not-dsh service as "already running" only when the response contains the `__DSH_BOOT__` marker; otherwise start-up fails and the log shows the port conflict. Use `-Port` to choose a different port.
 - **Electron: "检查更新" shows error** — ensure `git` is in your system PATH and the harness directory is a git repo with a configured remote.
+- **Page shows "dsh web authentication required" or "Automatic sign-in incomplete"** — click "Restart Backend" so the client re-authenticates; if it still fails, enable the tray debug log, restart once more, then check the `restart:` lines in `logs\startup-crash.log` to locate the stage that broke.
 - **Multiple checkouts on one machine** — run `install.ps1` per checkout; rename the first shortcut before installing the next one, since the shortcut name is fixed.
 - **Tray icon is hidden** — drag it out of the taskbar overflow area ("Show hidden icons").
 - **Balloon says service exited unexpectedly** — the health monitor checks every 30 seconds; open `logs\web-server.err.log` for details, then use the tray menu to restart.

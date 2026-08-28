@@ -1,6 +1,6 @@
 # DeepSeek Harness Web 启动器
 
-> **v2.0.5** — 新增 [Electron 桌面客户端](#electron-桌面客户端)：多标签页、Chrome 扩展、Harness 一键更新。
+> **v2.0.6** — [Electron 桌面客户端](#electron-桌面客户端)：多标签页、Chrome 扩展、一键更新、Web 认证自动登录。
 
 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) Web 界面的 Windows 启动方案，提供两种模式：
 
@@ -35,8 +35,10 @@ pnpm start
 - **系统托盘** — 关闭窗口最小化到托盘，双击恢复
 - **全局快捷键** — Alt+D 切换窗口显示/隐藏，F12 切换当前标签开发者工具
 - **Chrome 扩展** — 通过托盘菜单加载未打包的 Chrome 扩展
-- **Harness 一键更新** — 托盘菜单中检查更新，一键 `git pull` + `pnpm install` + `pnpm run build`
-- **客户端自动更新** — 检查 GitHub Releases 的新版本
+- **Web 认证自动登录** — 自动捕获 `dsh web` 打印的令牌 URL 并一次性烙印会话 Cookie，无需手动重开链接；接管外部启动的服务时给出明确指引
+- **Harness 一键更新** — 托盘菜单中检查更新，进度窗四步执行：`git pull --ff-only` → `pnpm run clean` → `pnpm install` → `pnpm run build`（clean 为尽力而为，失败会标红具体步骤）
+- **重启后端服务** — 托盘、新标签页按钮、更新完成弹窗三处入口同一加固流程：等端口释放 → 等就绪 → 重烙认证 → 重载标签，全程气泡与对话框反馈
+- **客户端自动更新** — 检查 GitHub Releases 的新版本，独立进度窗展示检查/下载/就绪各阶段
 - **中英文切换** — 默认中文，可在设置中切换为英文
 - **浏览隔离** — 标签页内打开的外部网站无法调用桌面控制（配置写入、重启后端、更新流程等）
 - **窗口状态记忆** — 常规尺寸/位置/最大化状态重启后还原
@@ -140,7 +142,8 @@ dsh-web-launcher/
 │           ├── shell.html           # 标签栏 UI
 │           ├── newtab.html          # 新标签页仪表盘
 │           ├── splash.html          # 启动闪屏
-│           └── update-progress.html # Harness/客户端更新进度窗
+│           ├── update-progress.html # Harness 更新进度窗（动态步骤列表）
+│           └── client-update.html   # 客户端更新独立进度窗
 ├── start-web.ps1                    # PowerShell 启动器（托盘图标 + 服务控制）
 ├── install.ps1                      # PowerShell 安装/卸载器
 ├── refresh-icon.ps1                 # 重新生成 dsh-web.ico
@@ -159,6 +162,7 @@ dsh-web-launcher/
 - **服务启动后立刻退出** — 查看 `logs\web-server.err.log`，通常是仓库未执行 `pnpm install` / `pnpm run build`。
 - **端口被其他程序占用** — 只有响应包含 `__DSH_BOOT__` 标记时才会判定为"已有 dsh 服务"；否则启动失败并在日志中体现端口冲突。可使用 `-Port` 指定其他端口。
 - **Electron「检查更新」报错** — 确保 `git` 在系统 PATH 中，且 harness 目录是一个配置了 remote 的 git 仓库。
+- **页面提示 "dsh web authentication required" 或「自动登录未完成」** — 点击「重启后端服务」让客户端重新认证；若仍未生效，开启托盘「调试日志」再重启一次，然后查看 `logs\startup-crash.log` 中 `restart:` 开头的行定位卡点。
 - **一台机器多个 harness 仓库** — 每个仓库各运行一次 `install.ps1`；快捷方式名称固定，装第二个前先重命名已有快捷方式。
 - **托盘图标被收纳** — 从任务栏"显示隐藏的图标"中拖出即可。
 - **气泡提示"服务进程已意外退出"** — 健康监控每 30 秒检测一次；查看 `logs\web-server.err.log` 了解详情，然后通过托盘菜单重启。

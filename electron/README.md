@@ -11,14 +11,16 @@ Electron-based desktop client for [DeepSeek Harness](https://github.com/deepseek
 - **System tray**: close the window to minimize to tray; double-click tray icon to restore
 - **Global shortcut**: `Alt+D` to toggle window visibility (configurable)
 - **Chrome extensions**: load unpacked Chrome extensions (Manifest V2/V3) via the tray menu
-- **Auto-update**: checks GitHub Releases for new versions, downloads and installs on user confirmation
+- **Auto-update**: checks GitHub Releases for new versions in a dedicated progress window (check → download → ready → install on user confirmation)
 - **Auto-discovery**: finds the harness repo by directory structure (not folder name)
 - **Single instance**: launching again brings the existing window to front
 - **Health monitor**: detects backend crashes and updates tray status
 - **Tab persistence**: open tabs survive app restart
 - **Window state restore**: normal bounds/position vs maximized are remembered across launches
-- **Debug log**: opt-in via tray menu (`调试日志`) — includes captured backend output so failed startups are diagnosable
+- **Debug log**: opt-in via tray menu (`调试日志`) — includes captured backend output so failed startups are diagnosable; a startup crash journal (`logs/startup-crash.log`) is always on regardless, including backend-restart stage markers
 - **Browsing isolation**: external websites opened in tabs cannot invoke desktop IPC (config writes, backend control, update flows); only local pages and the harness origin can
+- **Web-auth sign-in**: captures the `?token=` URL printed by `dsh web`, mints the durable session cookie once via a hidden window and reloads DSH tabs; after every backend restart the cookie is re-minted and verified with a cookie-carrying probe. Services started externally are probed too and get an actionable "restart via tray" prompt when re-auth is unavoidable
+- **Unified backend restart**: all three entry points (tray menu, New Tab pill, harness-update completion prompt) run the same flow — stop (incl. adopted processes), port-free wait with force-kill fallback, spawn, readiness wait, auth re-mint + verify, tab reload, tray balloon + dialog feedback
 
 ## Quick Start
 
@@ -68,8 +70,10 @@ pnpm pack             # unpacked directory (for testing)
 
 - **托盘右键 → 「检查 Harness 更新」**
 - 自动执行 `git fetch` → 比较本地/远程 HEAD
-- 发现更新后提示一键执行：`git pull --ff-only` → `pnpm install` → `pnpm run build`
-- 更新完成后可选立即重启后端服务
+- 发现更新后提示一键执行，进度窗按四步渲染（步骤列表由主进程下发，名称已本地化）：`git pull --ff-only` → `pnpm run clean` → `pnpm install` → `pnpm run build`
+  - `pnpm run clean` 为尽力而为：旧版 checkout 没有该脚本时降级为日志提示，不会中断更新
+  - 失败时会将卡住的具体步骤标红，而不仅是在日志里写 ERROR
+- 更新完成后可选立即重启后端服务（与托盘同一加固重启流程）
 
 这意味着用户**无需手动操作命令行**，harness 更新后客户端可以无痛继续使用。
 
@@ -137,7 +141,7 @@ Settings stored at `%APPDATA%/dsh-desktop/config.json`:
 | `language`         | `'zh'`        | UI language (`'zh'` / `'en'`)                                                                |
 | `theme`            | `'system'`    | New Tab page & tab bar palette (`'system'` / `'dark'` / `'light'`, follows DSH appearance) |
 | `bookmarks`        | built-ins       | New Tab page bookmarks (`null` = defaults)                                                     |
-| `debugLog`         | `false`       | Write startup/runtime logs incl. backend output; toggle from tray menu                           |
+| `debugLog`         | `false`       | Write startup/runtime logs incl. backend output; toggle from tray menu. The crash journal (`logs/startup-crash.log`) is always on |
 | `windowBounds`     | `1280×860`   | Last window size/position + maximized flag (auto-managed)                                        |
 
 ## Architecture
@@ -155,7 +159,8 @@ electron/
 │       ├── shell.html               # Tab bar UI (themed via CSS variables + dsh-theme channel)
 │       ├── newtab.html              # New Tab dashboard (address bar, bookmarks, status)
 │       ├── splash.html              # Startup splash with rotating tips
-│       └── update-progress.html     # Harness/launcher update progress steps + log
+│       ├── update-progress.html     # Harness update progress (dynamic step list) + log
+│       └── client-update.html       # Client (app) update progress window
 └── dist/                            # Build output (git-ignored)
 ```
 
