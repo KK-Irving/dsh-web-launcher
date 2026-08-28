@@ -119,7 +119,7 @@
       <div class="section-header"><span class="section-label" data-i18n="secActions">快捷操作</span></div>
       <div class="pill-grid">
         <div class="pill accent" onclick="doAction('new-session')"><span class="pi">&#x1F4AC;</span><span data-i18n="newSession">新建会话</span></div>
-        <div class="pill" onclick="doAction('restart-backend')"><span class="pi">&#x21BB;</span><span data-i18n="restart">重启服务</span></div>
+        <div class="pill" onclick="doAction('restart-backend')"><span class="pi">&#x21BB;</span><span data-i18n="restart">重启后端服务</span></div>
         <div class="pill" onclick="doAction('open-logs')"><span class="pi">&#x1F4C4;</span><span data-i18n="logs">日志</span></div>
         <div class="pill" onclick="doAction('check-harness-update')"><span class="pi">&#x2B06;</span><span data-i18n="checkHarness">Harness 更新</span></div>
         <div class="pill" onclick="doAction('check-update')"><span class="pi">&#x2B06;</span><span data-i18n="checkUpdate">客户端更新</span></div>
@@ -180,7 +180,7 @@
     const S = {
       zh: {
         secActions:'快捷操作', secSites:'常用网站', secStatus:'系统状态',
-        newSession:'新建会话', logs:'日志', restart:'重启服务',
+        newSession:'新建会话', logs:'日志', restart:'重启后端服务',
         checkHarness:'Harness 更新', checkUpdate:'客户端更新', loadExt:'加载扩展', manageExt:'管理扩展',
         backend:'后端', clientVer:'版本', servicePort:'端口', harnessPath:'仓库',
         running:'运行中', stopped:'已停止', starting:'启动中',
@@ -190,7 +190,7 @@
       },
       en: {
         secActions:'ACTIONS', secSites:'SITES', secStatus:'STATUS',
-        newSession:'New Session', logs:'Logs', restart:'Restart',
+        newSession:'New Session', logs:'Logs', restart:'Restart Backend',
         checkHarness:'Harness Update', checkUpdate:'Client Update', loadExt:'Load Extension', manageExt:'Manage',
         backend:'Backend', clientVer:'Version', servicePort:'Port', harnessPath:'Repo',
         running:'Running', stopped:'Stopped', starting:'Starting',
@@ -200,8 +200,8 @@
       }
     };
     const tips = {
-      zh:['地址栏输入任意网址即可在客户端内浏览','Alt+D 随时切换窗口显示','中键点击标签可快速关闭','退出时后端服务自动停止','支持加载 Chrome 扩展','首次启动较慢，后续启动很快','后端无响应可点击重启服务','关闭窗口只是最小化到托盘','标签页重启后自动恢复','底部 🌓 可切换深浅主题'],
-      en:['Type any URL above to browse in client','Alt+D toggles window','Middle-click tab to close','Backend stops on exit','Chrome extensions supported','First launch is slow, restarts fast','Try Restart if unresponsive','Close minimizes to tray','Tabs restore on restart','Use 🌓 below to toggle theme']
+      zh:['地址栏输入任意网址即可在客户端内浏览','Alt+D 随时切换窗口显示','中键点击标签可快速关闭','退出时后端服务自动停止','支持加载 Chrome 扩展','首次启动较慢，后续启动很快','后端无响应可点击重启后端服务','关闭窗口只是最小化到托盘','标签页重启后自动恢复','底部 🌓 可切换深浅主题'],
+      en:['Type any URL above to browse in client','Alt+D toggles window','Middle-click tab to close','Backend stops on exit','Chrome extensions supported','First launch is slow, restarts fast','Try Restart Backend if unresponsive','Close minimizes to tray','Tabs restore on restart','Use 🌓 below to toggle theme']
     };
 
     // Theme
