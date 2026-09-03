@@ -1,6 +1,6 @@
 # DeepSeek Harness Web 启动器
 
-> **v2.0.6** — [Electron 桌面客户端](#electron-桌面客户端)：多标签页、Chrome 扩展、一键更新、Web 认证自动登录。
+> **v2.0.7** — [Electron 桌面客户端](#electron-桌面客户端)：多标签页、Chrome 扩展、一键更新、Web 认证自动登录。
 
 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) Web 界面的 Windows 启动方案，提供两种模式：
 
@@ -35,7 +35,7 @@ pnpm start
 - **系统托盘** — 关闭窗口最小化到托盘，双击恢复
 - **全局快捷键** — Alt+D 切换窗口显示/隐藏，F12 切换当前标签开发者工具
 - **Chrome 扩展** — 通过托盘菜单加载未打包的 Chrome 扩展
-- **Web 认证自动登录** — 自动捕获 `dsh web` 打印的令牌 URL 并一次性烙印会话 Cookie，无需手动重开链接；接管外部启动的服务时给出明确指引
+- **Web 认证自动登录** — 自动捕获 `dsh web` 打印的令牌 URL 并一次性烙印会话 Cookie，无需手动重开链接；Cookie 过期后标签页自动重烙恢复，接管外部启动的服务时给出明确指引
 - **Harness 一键更新** — 托盘菜单中检查更新，进度窗四步执行：`git pull --ff-only` → `pnpm run clean` → `pnpm install` → `pnpm run build`（clean 为尽力而为，失败会标红具体步骤）
 - **重启后端服务** — 托盘、新标签页按钮、更新完成弹窗三处入口同一加固流程：等端口释放 → 等就绪 → 重烙认证 → 重载标签，全程气泡与对话框反馈
 - **客户端自动更新** — 检查 GitHub Releases 的新版本，独立进度窗展示检查/下载/就绪各阶段

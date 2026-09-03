@@ -1,6 +1,6 @@
 # DeepSeek Harness Web Launcher
 
-> **v2.0.6** — [Electron desktop client](#electron-desktop-client): multi-tab, Chrome extensions, one-click updates, and automatic web-auth sign-in.
+> **v2.0.7** — [Electron desktop client](#electron-desktop-client): multi-tab, Chrome extensions, one-click updates, and automatic web-auth sign-in.
 
 One-click Windows launcher for the [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) Web UI. Two modes available:
 
@@ -35,7 +35,7 @@ pnpm start
 - **System tray** — close button minimizes to tray, double-click to restore
 - **Global shortcut** — Alt+D toggles window visibility, F12 toggles DevTools of the active tab
 - **Chrome extensions** — load unpacked extensions via tray menu
-- **Web-auth auto sign-in** — captures the token URL printed by `dsh web` and mints the session cookie once, so the 401 wall never appears; adopted external services get an actionable prompt instead
+- **Web-auth auto sign-in** — captures the token URL printed by `dsh web` and mints the session cookie once, so the 401 wall never appears; if the cookie ever expires, tabs re-mint it automatically; adopted external services get an actionable prompt instead
 - **Harness auto-update** — progress window runs four steps: `git pull --ff-only` → `pnpm run clean` → `pnpm install` → `pnpm run build` (clean is best-effort; failures mark the exact step red)
 - **Backend restart** — tray menu, New Tab pill and the update-completion prompt share one hardened flow: port-free wait → readiness wait → cookie re-mint → tab reload, with balloon + dialog feedback throughout
 - **App auto-update** — checks GitHub Releases in a dedicated progress window (check → download → ready)
