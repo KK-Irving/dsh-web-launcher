@@ -10,7 +10,7 @@
  *   - Auto-update via electron-updater (GitHub Releases)
  */
 
-const { app, BrowserWindow, BrowserView, Tray, Menu, nativeImage, shell, globalShortcut, dialog, session, ipcMain, net } = require('electron')
+const { app, BrowserWindow, BrowserView, Tray, Menu, nativeImage, shell, globalShortcut, dialog, session, ipcMain, net, safeStorage } = require('electron')
 const path = require('path')
 const { spawn } = require('child_process')
 const http = require('http')
@@ -344,6 +344,323 @@ function reloadDshTabs() {
   }
 }
 
+// ── Password Vault (site credentials) ────────────────────────────────────────
+// Encrypted with Electron safeStorage (DPAPI on Windows / Keychain on macOS /
+// libsecret on Linux): plaintext never touches disk. Web pages may store and
+// read back ONLY credentials under their own origin; local app pages (file://,
+// the New Tab panel) manage everything. Passwords are filled via
+// executeJavaScript into the requesting page — they are never sent to any
+// renderer process, not even the one that asked.
+
+let pwCache = null
+
+function pwEncryptionAvailable() {
+  try { return !!safeStorage && safeStorage.isEncryptionAvailable() } catch { return false }
+}
+
+function pwLoad() {
+  if (pwCache) return pwCache
+  try {
+    const parsed = JSON.parse(fs.readFileSync(path.join(app.getPath('userData'), 'passwords.json'), 'utf8'))
+    if (parsed && Array.isArray(parsed.entries)) {
+      pwCache = {
+        version: 1,
+        entries: parsed.entries,
+        neverSaveOrigins: Array.isArray(parsed.neverSaveOrigins) ? parsed.neverSaveOrigins : []
+      }
+      return pwCache
+    }
+  } catch { /* missing or corrupt -> fresh store */ }
+  pwCache = { version: 1, entries: [], neverSaveOrigins: [] }
+  return pwCache
+}
+
+function pwPersist() {
+  if (!pwCache) return
+  try {
+    fs.mkdirSync(app.getPath('userData'), { recursive: true })
+    fs.writeFileSync(path.join(app.getPath('userData'), 'passwords.json'), JSON.stringify(pwCache, null, 2), 'utf8')
+  } catch (err) {
+    journal('password store persist failed: ' + (err && err.message))
+  }
+}
+
+function pwUpsert(origin, username, password) {
+  if (!pwEncryptionAvailable()) return { ok: false, error: 'encryption-unavailable' }
+  const db = pwLoad()
+  const enc = safeStorage.encryptString(String(password)).toString('base64')
+  const now = Date.now()
+  const existing = db.entries.find(e => e.origin === origin && e.username === (username || ''))
+  if (existing) {
+    existing.passwordEnc = enc
+    existing.updatedAt = now
+  } else {
+    db.entries.push({
+      id: 'pw_' + now.toString(36) + Math.random().toString(36).slice(2, 8),
+      origin,
+      username: String(username || ''),
+      passwordEnc: enc,
+      createdAt: now,
+      updatedAt: now
+    })
+  }
+  pwPersist()
+  return { ok: true }
+}
+
+function pwDecryptEntry(entry) {
+  try { return safeStorage.decryptString(Buffer.from(entry.passwordEnc, 'base64')) } catch { return null }
+}
+
+function senderOrigin(event) {
+  try { return new URL((event.senderFrame && event.senderFrame.url) || '').origin } catch { return null }
+}
+
+function pwOriginAllowed(event, requestedOrigin) {
+  // Local app pages manage everything; web pages may only touch their own origin.
+  const o = senderOrigin(event)
+  if (o === 'file://') return true
+  return !!o && o === requestedOrigin
+}
+
+const PW_HAS_LOGIN_FIELD_SNIPPET = '(() => { const vis=(el)=>el.offsetParent!==null&&!el.disabled&&!el.readOnly; return [...document.querySelectorAll("input[type=password]")].some(vis) })()'
+
+function pwBuildFillScript(username, password) {
+  return `(() => {
+    const vis = (el) => el && el.offsetParent !== null && !el.disabled && !el.readOnly
+    const pwd = [...document.querySelectorAll('input[type=password]')].find(vis)
+    if (!pwd) return { ok: false }
+    const scope = pwd.closest('form') || document
+    const inputs = [...scope.querySelectorAll('input')].filter(vis)
+    const pi = inputs.indexOf(pwd)
+    let user = null
+    for (let i = pi - 1; i >= 0; i--) {
+      const t = inputs[i]
+      const ty = (t.getAttribute('type') || 'text').toLowerCase()
+      if (ty === 'text' || ty === 'email' || ty === 'tel') { user = t; break }
+    }
+    const setVal = (el, v) => {
+      const d = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')
+      d.set.call(el, v)
+      el.dispatchEvent(new Event('input', { bubbles: true }))
+      el.dispatchEvent(new Event('change', { bubbles: true }))
+    }
+    let filledUser = false
+    if (user) { setVal(user, ${JSON.stringify(username)}); filledUser = true }
+    setVal(pwd, ${JSON.stringify(password)})
+    return { ok: true, filledUser }
+  })()`
+}
+
+// Capture from the page-side heuristic (preload) — origin-validated, settings-
+// aware, then confirmed by the user via the save bar before anything is stored.
+let pwPendingCandidate = null
+
+function pwHandleCapture(event, data) {
+  if (!store.get('savePasswords', true)) return
+  const { origin, username, password } = data || {}
+  if (typeof origin !== 'string' || !/^https?:/.test(origin)) return
+  if (typeof password !== 'string' || !password) return
+  if (origin === `http://${DEFAULT_HOST}:${DEFAULT_PORT}`) return // harness needs no capture
+  if (!pwOriginAllowed(event, origin)) return
+  const db = pwLoad()
+  if (db.neverSaveOrigins.includes(origin)) return
+  const now = Date.now()
+  if (pwPendingCandidate && now - pwPendingCandidate.at < 3000
+    && pwPendingCandidate.origin === origin && pwPendingCandidate.username === (username || '')) return
+  pwPendingCandidate = { origin, username: String(username || ''), password, at: now }
+  pwShowBar('save')
+}
+
+// Floating confirmation bar (save / fill), anchored to the main window's
+// bottom-right corner. Content is sent after did-finish-load (replay-safe).
+let pwBarWindow = null
+let pwBarMode = null
+let pwBarAutoClose = null
+let pwBarChromeHooked = false
+let pwFillEntries = null
+let pwFillTargetId = null
+let pwLastFillPromptAt = 0
+
+function pwHideBar() {
+  if (pwBarAutoClose) { clearTimeout(pwBarAutoClose); pwBarAutoClose = null }
+  if (pwBarWindow && !pwBarWindow.isDestroyed()) pwBarWindow.close()
+  pwBarWindow = null
+  pwBarMode = null
+  pwPendingCandidate = null
+  pwFillEntries = null
+  pwFillTargetId = null
+}
+
+function pwPositionBar() {
+  if (!pwBarWindow || pwBarWindow.isDestroyed()) return
+  if (!mainWindow || mainWindow.isDestroyed()) return
+  const b = mainWindow.getContentBounds()
+  pwBarWindow.setPosition(b.x + b.width - 460 - 16, b.y + b.height - 56 - 16)
+}
+
+function pwSendBarUI() {
+  if (!pwBarWindow || pwBarWindow.isDestroyed()) return
+  let payload
+  if (pwBarMode === 'save') {
+    payload = {
+      mode: 'save',
+      text: t('pwSaveAsk'),
+      site: (pwPendingCandidate && pwPendingCandidate.origin) || '',
+      labels: { save: t('pwBtnSave'), never: t('pwBtnNever') }
+    }
+  } else {
+    payload = {
+      mode: 'fill',
+      text: t('pwFillAsk'),
+      site: (pwFillEntries && pwFillEntries[0] && pwFillEntries[0].origin) || '',
+      users: (pwFillEntries || []).map(e => e.username),
+      labels: { fill: t('pwBtnFill'), unnamed: t('pwUnnamedUser') }
+    }
+  }
+  pwBarWindow.webContents.send('pw-bar-ui', { ...payload, lang: t.lang, theme: currentResolvedTheme() })
+}
+
+function pwShowBar(mode) {
+  pwBarMode = mode
+  if (!mainWindow || mainWindow.isDestroyed()) return
+  if (pwBarAutoClose) { clearTimeout(pwBarAutoClose); pwBarAutoClose = null }
+  if (!pwBarWindow || pwBarWindow.isDestroyed()) {
+    pwBarWindow = new BrowserWindow({
+      width: 460, height: 56, frame: false, resizable: false, minimizable: false,
+      maximizable: false, skipTaskbar: true, show: false, autoHideMenuBar: true,
+      alwaysOnTop: true, backgroundColor: '#23252f',
+      webPreferences: { nodeIntegration: true, contextIsolation: false }
+    })
+    pwBarWindow.loadFile(path.join(__dirname, '..', 'assets', 'password-bar.html'))
+    pwBarWindow.webContents.on('did-finish-load', () => pwSendBarUI())
+    pwBarWindow.on('closed', () => { pwBarWindow = null; pwBarMode = null })
+    if (!pwBarChromeHooked) {
+      pwBarChromeHooked = true
+      mainWindow.on('move', pwPositionBar)
+      mainWindow.on('resize', pwPositionBar)
+      mainWindow.on('closed', () => { pwBarChromeHooked = false })
+    }
+    pwBarWindow.once('ready-to-show', () => { pwPositionBar(); if (pwBarWindow) pwBarWindow.show() })
+  } else {
+    pwSendBarUI()
+  }
+  pwBarAutoClose = setTimeout(() => pwHideBar(), 30000)
+}
+
+function pwPerformFill(username) {
+  const tab = tabs.find(tb => tb.id === pwFillTargetId)
+  const entries = pwFillEntries
+  if (!tab || !entries || !entries.length) return
+  const entry = entries.find(e => e.username === (username || '')) || entries[0]
+  const password = pwDecryptEntry(entry)
+  if (password === null) { journal('password fill failed (decrypt) for ' + entry.origin); return }
+  const wc = tab.view && tab.view.webContents
+  if (!wc || wc.isDestroyed()) return
+  wc.executeJavaScript(pwBuildFillScript(entry.username, password), false).catch(() => { /* page gone */ })
+}
+
+/** Called on did-finish-load of every remote tab. */
+function pwMaybeOfferFill(tab) {
+  try {
+    if (!store.get('savePasswords', true) || !pwEncryptionAvailable()) return
+    if (pwBarWindow && !pwBarWindow.isDestroyed()) return
+    const now = Date.now()
+    if (now - pwLastFillPromptAt < 10000) return
+    let origin = null
+    try { origin = new URL(tab.url).origin } catch { return }
+    if (!origin || !/^https?:/.test(origin)) return
+    if (origin === `http://${DEFAULT_HOST}:${DEFAULT_PORT}`) return
+    const entries = pwLoad().entries.filter(e => e.origin === origin)
+    if (!entries.length) return
+    const wc = tab.view && tab.view.webContents
+    if (!wc || wc.isDestroyed()) return
+    wc.executeJavaScript(PW_HAS_LOGIN_FIELD_SNIPPET, true).then((has) => {
+      if (!has) return
+      pwLastFillPromptAt = Date.now()
+      pwFillEntries = entries
+      pwFillTargetId = tab.id
+      pwShowBar('fill')
+    }).catch(() => { /* page gone */ })
+  } catch { /* diagnostics only */ }
+}
+
+function pwBuildContextMenu(tabId) {
+  try {
+    if (!store.get('savePasswords', true) || !pwEncryptionAvailable()) return
+    const tab = tabs.find(tb => tb.id === tabId)
+    if (!tab || typeof tab.url !== 'string') return
+    let origin = null
+    try { origin = new URL(tab.url).origin } catch { return }
+    if (!origin || !/^https?:/.test(origin) || origin === `http://${DEFAULT_HOST}:${DEFAULT_PORT}`) return
+    const entries = pwLoad().entries.filter(e => e.origin === origin)
+    if (!entries.length) return
+    const items = entries.map((en) => ({
+      label: t('pwFillMenu') + (en.username ? ' — ' + en.username : ''),
+      click: () => { pwFillEntries = entries; pwFillTargetId = tabId; pwPerformFill(en.username) }
+    }))
+    Menu.buildFromTemplate(items).popup({ window: mainWindow || undefined })
+  } catch { /* diagnostics only */ }
+}
+
+function registerPasswordIpc() {
+  ipcHandle('pw-supported', () => pwEncryptionAvailable())
+  ipcHandle('pw-get-for-origin', (event, origin) => {
+    if (typeof origin !== 'string' || !pwOriginAllowed(event, origin)) return []
+    return pwLoad().entries.filter(e => e.origin === origin).map(e => ({ id: e.id, username: e.username }))
+  })
+  ipcHandle('pw-reveal', (event, id) => {
+    const entry = pwLoad().entries.find(e => e.id === id)
+    if (!entry || !pwOriginAllowed(event, entry.origin)) return null
+    const password = pwDecryptEntry(entry)
+    return password === null ? null : { id: entry.id, origin: entry.origin, username: entry.username, password }
+  })
+  ipcHandle('pw-list', (event) => {
+    if (senderOrigin(event) !== 'file://') return []
+    return pwLoad().entries.map(e => ({ id: e.id, origin: e.origin, username: e.username, updatedAt: e.updatedAt }))
+  })
+  ipcHandle('pw-delete', (event, id) => {
+    if (senderOrigin(event) !== 'file://') return { ok: false }
+    const db = pwLoad()
+    const i = db.entries.findIndex(e => e.id === id)
+    if (i >= 0) { db.entries.splice(i, 1); pwPersist() }
+    return { ok: true }
+  })
+  ipcOn('pw-save', (event, data) => {
+    const { origin, username, password } = data || {}
+    if (typeof origin !== 'string' || typeof password !== 'string' || !password) return
+    if (!pwOriginAllowed(event, origin)) return
+    const r = pwUpsert(origin, username, password)
+    journal('password vault save ok=' + r.ok)
+  })
+  ipcOn('pw-never', (event, origin) => {
+    if (typeof origin !== 'string' || !pwOriginAllowed(event, origin)) return
+    const db = pwLoad()
+    if (!db.neverSaveOrigins.includes(origin)) { db.neverSaveOrigins.push(origin); pwPersist() }
+  })
+  ipcOn('pw-capture-candidate', (event, data) => pwHandleCapture(event, data))
+  ipcOn('pw-bar-action', (event, payload) => {
+    const a = payload && payload.action
+    if (a === 'save-confirm' && pwPendingCandidate) {
+      const r = pwUpsert(pwPendingCandidate.origin, pwPendingCandidate.username, pwPendingCandidate.password)
+      journal('password vault save(bar) ok=' + r.ok)
+      pwHideBar()
+    } else if (a === 'never' && pwPendingCandidate) {
+      const db = pwLoad()
+      if (!db.neverSaveOrigins.includes(pwPendingCandidate.origin)) {
+        db.neverSaveOrigins.push(pwPendingCandidate.origin)
+        pwPersist()
+      }
+      pwHideBar()
+    } else if (a === 'fill') {
+      pwPerformFill(payload && payload.username)
+      pwHideBar()
+    } else if (a === 'dismiss') {
+      pwHideBar()
+    }
+  })
+}
+
 function resolveRunner(harnessRoot) {
   _log('resolveRunner for: ' + harnessRoot)
   const { execSync } = require('child_process')
@@ -531,6 +848,14 @@ function createTab(url = WEB_URL) {
       'document.body ? document.body.innerText.indexOf("authentication required") !== -1 : false', true
     ).then((hit) => { if (hit) autoReauthAfter401() }).catch(() => { /* page gone */ })
   })
+
+  // Password manager: offer saved-credential fill on login pages and a
+  // right-click "fill password" entry for sites with stored entries.
+  view.webContents.on('did-finish-load', () => {
+    const tab = tabs.find(tb => tb.id === id)
+    if (tab) pwMaybeOfferFill(tab)
+  })
+  view.webContents.on('context-menu', () => pwBuildContextMenu(id))
 
   // Watch for DSH theme changes via injected MutationObserver
   view.webContents.on('dom-ready', () => {
@@ -2254,6 +2579,7 @@ if (!gotTheLock) {
       _log('ready event fired')
       // Register IPC for tab bar
       registerTabIpc()
+      registerPasswordIpc()
       journal('registerTabIpc ok')
       _log('registerTabIpc done')
 

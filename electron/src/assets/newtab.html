@@ -125,6 +125,7 @@
         <div class="pill" onclick="doAction('check-update')"><span class="pi">&#x2B06;</span><span data-i18n="checkUpdate">客户端更新</span></div>
         <div class="pill" onclick="doAction('load-extension')"><span class="pi">&#x1F9E9;</span><span data-i18n="loadExt">加载扩展</span></div>
         <div class="pill" onclick="doAction('manage-extensions')"><span class="pi">&#x2699;</span><span data-i18n="manageExt">管理扩展</span></div>
+        <div class="pill" id="pwPill"><span class="pi">&#128273;</span><span data-i18n="pwPanel">密码管理</span></div>
       </div>
     </div>
 
@@ -149,6 +150,14 @@
         <div class="info-pill"><span class="dot" id="portDot"></span><span class="il" data-i18n="servicePort">端口</span><span class="iv" id="portValue">--</span></div>
         <div class="info-pill"><span class="dot green"></span><span class="il" data-i18n="harnessPath">仓库</span><span class="iv" id="harnessPath" title="">--</span></div>
       </div>
+    </div>
+
+    <div id="pwSection" style="display:none">
+      <div class="section-header">
+        <span class="section-label" data-i18n="pwPanel">密码管理</span>
+        <span class="sec-btn" id="pwToggleBtn"></span>
+      </div>
+      <div class="info-list" id="pwList"></div>
     </div>
 
     <div class="tip"><span class="ti">&#x1F4A1;</span><span id="tipText"></span></div>
@@ -181,6 +190,8 @@
       zh: {
         secActions:'快捷操作', secSites:'常用网站', secStatus:'系统状态',
         newSession:'新建会话', logs:'日志', restart:'重启后端服务',
+        pwPanel:'密码管理', pwEmpty:'暂无已保存的密码', pwReveal:'显示', pwDelete:'删除',
+        pwOn:'保存：开', pwOff:'保存：关', pwUnnamed:'（无用户名）',
         checkHarness:'Harness 更新', checkUpdate:'客户端更新', loadExt:'加载扩展', manageExt:'管理扩展',
         backend:'后端', clientVer:'版本', servicePort:'端口', harnessPath:'仓库',
         running:'运行中', stopped:'已停止', starting:'启动中',
@@ -191,6 +202,8 @@
       en: {
         secActions:'ACTIONS', secSites:'SITES', secStatus:'STATUS',
         newSession:'New Session', logs:'Logs', restart:'Restart Backend',
+        pwPanel:'Passwords', pwEmpty:'No saved passwords yet', pwReveal:'Show', pwDelete:'Delete',
+        pwOn:'Save: on', pwOff:'Save: off', pwUnnamed:'(no username)',
         checkHarness:'Harness Update', checkUpdate:'Client Update', loadExt:'Load Extension', manageExt:'Manage',
         backend:'Backend', clientVer:'Version', servicePort:'Port', harnessPath:'Repo',
         running:'Running', stopped:'Stopped', starting:'Starting',
@@ -309,6 +322,71 @@
 
     function doAction(a) { ipcRenderer.send('newtab-action', a); }
     function openUrl(u) { if(!editing){ const t = normalizeUrl(u); if (t) ipcRenderer.send('newtab-open-url', t); } }
+
+    // ── Password manager panel (local file:// page -> fully trusted) ──────────
+    let pwPanelOpen = false;
+    let pwEntries = [];
+    let pwEnabled = true;
+    function pwRender() {
+      const s = S[lang];
+      const list = document.getElementById('pwList');
+      list.textContent = '';
+      if (!pwEntries.length) {
+        const empty = document.createElement('div');
+        empty.className = 'info-pill';
+        empty.textContent = s.pwEmpty;
+        list.appendChild(empty);
+      }
+      // nodeIntegration page: data goes through textContent only (no innerHTML).
+      pwEntries.forEach(e => {
+        const row = document.createElement('div');
+        row.className = 'info-pill pw-row';
+        const site = document.createElement('span');
+        site.className = 'il';
+        site.textContent = e.origin.replace(/^https?:\/\//, '');
+        site.title = e.origin;
+        const user = document.createElement('span');
+        user.className = 'iv pw-user';
+        user.textContent = e.username || s.pwUnnamed;
+        const reveal = document.createElement('span');
+        reveal.className = 'sec-btn';
+        reveal.textContent = s.pwReveal;
+        reveal.addEventListener('click', async () => {
+          const full = await ipcRenderer.invoke('pw-reveal', e.id);
+          if (full && full.password) {
+            user.textContent = full.password;
+            user.title = full.password;
+            setTimeout(() => { user.textContent = e.username || s.pwUnnamed; user.title = e.username || ''; }, 5000);
+          }
+        });
+        const del = document.createElement('span');
+        del.className = 'sec-btn';
+        del.textContent = s.pwDelete;
+        del.addEventListener('click', async () => {
+          await ipcRenderer.invoke('pw-delete', e.id);
+          pwEntries = (await ipcRenderer.invoke('pw-list')) || [];
+          pwRender();
+        });
+        row.append(site, user, reveal, del);
+        list.appendChild(row);
+      });
+      const tg = document.getElementById('pwToggleBtn');
+      tg.textContent = pwEnabled ? s.pwOn : s.pwOff;
+    }
+    async function togglePwPanel() {
+      pwPanelOpen = !pwPanelOpen;
+      document.getElementById('pwSection').style.display = pwPanelOpen ? '' : 'none';
+      if (!pwPanelOpen) return;
+      pwEnabled = await ipcRenderer.invoke('get-config', 'savePasswords');
+      pwEntries = (await ipcRenderer.invoke('pw-list')) || [];
+      pwRender();
+    }
+    document.getElementById('pwPill').addEventListener('click', togglePwPanel);
+    document.getElementById('pwToggleBtn').addEventListener('click', async () => {
+      pwEnabled = !pwEnabled;
+      await ipcRenderer.invoke('set-config', 'savePasswords', pwEnabled);
+      pwRender();
+    });
     document.getElementById('urlInput').addEventListener('keydown', e => { if(e.key==='Enter'){ const t = normalizeUrl(e.target.value); if (t) ipcRenderer.send('newtab-open-url', t); } });
 
     ipcRenderer.on('newtab-info', (_, d) => {

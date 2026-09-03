@@ -132,6 +132,13 @@ const strings = {
     webAuthRequiredMsg: '当前 Web 服务由外部启动，客户端拿不到认证令牌。\n请通过托盘菜单「重启 Web 服务」让客户端接管后端，即可自动完成登录。',
     webAuthStillFailTitle: '自动登录未完成',
     webAuthStillFailMsg: '后端已重启，但 Web 认证仍未生效（未捕获到 dsh web 令牌）。\n请开启托盘「调试日志」后再次重启服务，并检查 logs 目录中 startup-crash.log 与当次日志。',
+    pwSaveAsk: '要保存此网站的密码吗？',
+    pwFillAsk: '使用已保存的密码填充',
+    pwBtnSave: '保存',
+    pwBtnNever: '永不',
+    pwBtnFill: '填充',
+    pwUnnamedUser: '（无用户名）',
+    pwFillMenu: '填充密码',
 
     // Update window - Harness flow
     harnessCheckUpdate: '检查 Harness 更新',
@@ -288,6 +295,13 @@ const strings = {
     webAuthRequiredMsg: 'The running web service was started externally, so the client has no auth token.\nUse the tray menu "Restart Web Service" to let the client own the backend and sign in automatically.',
     webAuthStillFailTitle: 'Automatic sign-in incomplete',
     webAuthStillFailMsg: 'The backend restarted, but web authentication is still inactive (the dsh web token line was never captured).\nEnable the tray "Debug Log", restart the service again, and check startup-crash.log plus that run\'s log in the logs folder.',
+    pwSaveAsk: 'Save this site\'s password?',
+    pwFillAsk: 'Fill with a saved password',
+    pwBtnSave: 'Save',
+    pwBtnNever: 'Never',
+    pwBtnFill: 'Fill',
+    pwUnnamedUser: '(no username)',
+    pwFillMenu: 'Fill password',
 
     // Update window - Harness flow
     harnessCheckUpdate: 'Check Harness Update',

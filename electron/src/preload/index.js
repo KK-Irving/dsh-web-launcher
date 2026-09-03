@@ -66,4 +66,62 @@ contextBridge.exposeInMainWorld('dshDesktop', {
   // ── Launcher Self-Update ───────────────────────────────────────────────────
   checkLauncherUpdate: () => ipcRenderer.invoke('check-launcher-update'),
   updateLauncher: () => ipcRenderer.invoke('update-launcher'),
+
+  // ── Password vault (origin-scoped) ─────────────────────────────────────────
+  // Web pages may only store/retrieve credentials under their own origin; the
+  // main process re-validates origin === sender origin for every call.
+  capturePasswordCandidate: (origin, username, password) =>
+    ipcRenderer.send('pw-capture-candidate', { origin, username, password }),
+  getSavedPasswordsForOrigin: (origin) => ipcRenderer.invoke('pw-get-for-origin', origin),
 })
+
+// ── Login-form capture heuristics ─────────────────────────────────────────────
+// Runs in the isolated world (DOM is shared, page JS is not touched). Captures
+// submit/click on forms containing a password field and hands the candidate to
+// the main process; nothing is stored without explicit user confirmation in
+// the save bar. Local pages (file://) and non-http(s) frames are skipped.
+try {
+  if (/^https?:/.test(location.protocol)) {
+    let lastSent = 0
+    const sendCandidate = (form) => {
+      try {
+        const pwd = form.querySelector('input[type=password]')
+        if (!pwd || !pwd.value) return
+        const vis = (el) => el.offsetParent !== null && !el.disabled
+        if (!vis(pwd)) return
+        const inputs = [...form.querySelectorAll('input')].filter(vis)
+        const pi = inputs.indexOf(pwd)
+        let user = ''
+        for (let i = pi - 1; i >= 0; i--) {
+          const t = inputs[i]
+          const ty = (t.getAttribute('type') || 'text').toLowerCase()
+          if (ty === 'text' || ty === 'email' || ty === 'tel') { user = t.value; break }
+        }
+        lastSent = Date.now()
+        window.dshDesktop.capturePasswordCandidate(location.origin, user, pwd.value)
+      } catch { /* never break the page */ }
+    }
+    const maybeSend = (form) => {
+      if (Date.now() - lastSent < 4000) return
+      sendCandidate(form)
+    }
+    document.addEventListener('submit', (ev) => {
+      try {
+        const f = ev.target
+        if (f && f.querySelector && f.querySelector('input[type=password]')) maybeSend(f)
+      } catch { /* never break the page */ }
+    }, true)
+    document.addEventListener('click', (ev) => {
+      try {
+        const t = ev.target
+        const btn = t && t.closest ? t.closest('button, input[type=submit], [role=button]') : null
+        if (!btn) return
+        const f = btn.closest('form')
+        if (f && f.querySelector && f.querySelector('input[type=password]')) {
+          const pwd = f.querySelector('input[type=password]')
+          if (pwd && pwd.value) maybeSend(f)
+        }
+      } catch { /* never break the page */ }
+    }, true)
+  }
+} catch { /* never break the page */ }
