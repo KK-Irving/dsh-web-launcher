@@ -423,11 +423,16 @@ function pwOriginAllowed(event, requestedOrigin) {
   return !!o && o === requestedOrigin
 }
 
-const PW_HAS_LOGIN_FIELD_SNIPPET = '(() => { const vis=(el)=>el.offsetParent!==null&&!el.disabled&&!el.readOnly; return [...document.querySelectorAll("input[type=password]")].some(vis) })()'
+const PW_HAS_LOGIN_FIELD_SNIPPET = '(() => { const vis=(el)=>{const r=el.getBoundingClientRect();if(!(r.width>0&&r.height>0))return false;const s=getComputedStyle(el);return !el.disabled&&!el.readOnly&&s.visibility!=="hidden"&&s.display!=="none"}; return [...document.querySelectorAll("input[type=password]")].some(vis) })()'
 
 function pwBuildFillScript(username, password) {
   return `(() => {
-    const vis = (el) => el && el.offsetParent !== null && !el.disabled && !el.readOnly
+    const vis = (el) => {
+      const r = el.getBoundingClientRect()
+      if (!(r.width > 0 && r.height > 0)) return false
+      const s = getComputedStyle(el)
+      return !el.disabled && !el.readOnly && s.visibility !== 'hidden' && s.display !== 'none'
+    }
     const pwd = [...document.querySelectorAll('input[type=password]')].find(vis)
     if (!pwd) return { ok: false }
     const scope = pwd.closest('form') || document
@@ -457,18 +462,23 @@ function pwBuildFillScript(username, password) {
 let pwPendingCandidate = null
 
 function pwHandleCapture(event, data) {
-  if (!store.get('savePasswords', true)) return
-  const { origin, username, password } = data || {}
-  if (typeof origin !== 'string' || !/^https?:/.test(origin)) return
-  if (typeof password !== 'string' || !password) return
-  if (origin === `http://${DEFAULT_HOST}:${DEFAULT_PORT}`) return // harness needs no capture
-  if (!pwOriginAllowed(event, origin)) return
+  const origin = data && typeof data.origin === 'string' ? data.origin : null
+  journal('pw capture received origin=' + origin + ' hasUser=' + !!(data && data.username))
+  if (!store.get('savePasswords', true)) { journal('pw capture skipped: setting off'); return }
+  if (!origin || !/^https?:/.test(origin)) { journal('pw capture skipped: bad origin'); return }
+  const password = data && typeof data.password === 'string' ? data.password : ''
+  if (!password) { journal('pw capture skipped: empty password'); return }
+  if (origin === `http://${DEFAULT_HOST}:${DEFAULT_PORT}`) { journal('pw capture skipped: harness origin'); return }
+  if (!pwOriginAllowed(event, origin)) { journal('pw capture skipped: origin mismatch'); return }
   const db = pwLoad()
-  if (db.neverSaveOrigins.includes(origin)) return
+  if (db.neverSaveOrigins.includes(origin)) { journal('pw capture skipped: never-save origin'); return }
   const now = Date.now()
   if (pwPendingCandidate && now - pwPendingCandidate.at < 3000
-    && pwPendingCandidate.origin === origin && pwPendingCandidate.username === (username || '')) return
-  pwPendingCandidate = { origin, username: String(username || ''), password, at: now }
+    && pwPendingCandidate.origin === origin && pwPendingCandidate.username === (data.username || '')) {
+    journal('pw capture skipped: duplicate'); return
+  }
+  pwPendingCandidate = { origin, username: String(data.username || ''), password, at: now }
+  journal('pw capture accepted, showing save bar')
   pwShowBar('save')
 }
 

@@ -77,50 +77,71 @@ contextBridge.exposeInMainWorld('dshDesktop', {
 
 // ── Login-form capture heuristics ─────────────────────────────────────────────
 // Runs in the isolated world (DOM is shared, page JS is not touched). Captures
-// submit/click on forms containing a password field and hands the candidate to
-// the main process; nothing is stored without explicit user confirmation in
-// the save bar. Local pages (file://) and non-http(s) frames are skipped.
+// submit / login-button click / Enter-in-password and hands the candidate to
+// the main process DIRECTLY via ipcRenderer (contextBridge exports are only
+// visible to the main world, not to this scope). Nothing is stored without
+// explicit user confirmation in the save bar.
 try {
   if (/^https?:/.test(location.protocol)) {
     let lastSent = 0
-    const sendCandidate = (form) => {
+    const visible = (el) => {
+      if (!el || el.disabled || el.readOnly) return false
+      const r = el.getBoundingClientRect()
+      if (!(r.width > 0 && r.height > 0)) return false
+      const st = getComputedStyle(el)
+      return st.visibility !== 'hidden' && st.display !== 'none'
+    }
+    // Document-scope pair: many SPA login pages have no <form> at all.
+    const findPair = () => {
+      const pwd = [...document.querySelectorAll('input[type=password]')].find(visible)
+      if (!pwd) return null
+      const container = pwd.closest('form') || pwd.parentElement || document
+      const inputs = [...container.querySelectorAll('input')].filter(visible)
+      const pi = inputs.indexOf(pwd)
+      let user = null
+      for (let i = pi - 1; i >= 0; i--) {
+        const t = inputs[i]
+        const ty = (t.getAttribute('type') || 'text').toLowerCase()
+        if (ty === 'text' || ty === 'email' || ty === 'tel') { user = t; break }
+      }
+      if (!user) {
+        user = [...document.querySelectorAll('input')].filter(visible).find(t => t !== pwd
+          && ['text', 'email', 'tel'].includes((t.getAttribute('type') || 'text').toLowerCase())
+          && /user|email|phone|mobile|account|login|name/i.test((t.name || '') + ' ' + (t.id || '') + ' ' + (t.placeholder || ''))
+        ) || null
+      }
+      return { pwd, user }
+    }
+    const capture = (source) => {
       try {
-        const pwd = form.querySelector('input[type=password]')
-        if (!pwd || !pwd.value) return
-        const vis = (el) => el.offsetParent !== null && !el.disabled
-        if (!vis(pwd)) return
-        const inputs = [...form.querySelectorAll('input')].filter(vis)
-        const pi = inputs.indexOf(pwd)
-        let user = ''
-        for (let i = pi - 1; i >= 0; i--) {
-          const t = inputs[i]
-          const ty = (t.getAttribute('type') || 'text').toLowerCase()
-          if (ty === 'text' || ty === 'email' || ty === 'tel') { user = t.value; break }
-        }
-        lastSent = Date.now()
-        window.dshDesktop.capturePasswordCandidate(location.origin, user, pwd.value)
+        const now = Date.now()
+        if (now - lastSent < 4000) return
+        const pair = findPair()
+        if (!pair || !pair.pwd.value) return
+        lastSent = now
+        ipcRenderer.send('pw-capture-candidate', {
+          origin: location.origin,
+          username: pair.user ? pair.user.value : '',
+          password: pair.pwd.value,
+          source
+        })
       } catch { /* never break the page */ }
     }
-    const maybeSend = (form) => {
-      if (Date.now() - lastSent < 4000) return
-      sendCandidate(form)
-    }
-    document.addEventListener('submit', (ev) => {
-      try {
-        const f = ev.target
-        if (f && f.querySelector && f.querySelector('input[type=password]')) maybeSend(f)
-      } catch { /* never break the page */ }
-    }, true)
+    document.addEventListener('submit', () => capture('submit'), true)
     document.addEventListener('click', (ev) => {
       try {
         const t = ev.target
-        const btn = t && t.closest ? t.closest('button, input[type=submit], [role=button]') : null
-        if (!btn) return
-        const f = btn.closest('form')
-        if (f && f.querySelector && f.querySelector('input[type=password]')) {
-          const pwd = f.querySelector('input[type=password]')
-          if (pwd && pwd.value) maybeSend(f)
-        }
+        if (!t || !t.closest) return
+        if (!t.closest('button, input[type=submit], input[type=button], [role=button], a')) return
+        capture('click')
+      } catch { /* never break the page */ }
+    }, true)
+    document.addEventListener('keydown', (ev) => {
+      try {
+        if (ev.key !== 'Enter') return
+        const t = ev.target
+        if (!t || (t.getAttribute && t.getAttribute('type')) !== 'password') return
+        capture('enter')
       } catch { /* never break the page */ }
     }, true)
   }
