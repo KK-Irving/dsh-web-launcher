@@ -139,6 +139,9 @@ const strings = {
     pwBtnFill: '填充',
     pwUnnamedUser: '（无用户名）',
     pwFillMenu: '填充密码',
+    ctxBack: '返回',
+    ctxForward: '前进',
+    ctxReload: '刷新',
 
     // Update window - Harness flow
     harnessCheckUpdate: '检查 Harness 更新',
@@ -302,6 +305,9 @@ const strings = {
     pwBtnFill: 'Fill',
     pwUnnamedUser: '(no username)',
     pwFillMenu: 'Fill password',
+    ctxBack: 'Back',
+    ctxForward: 'Forward',
+    ctxReload: 'Reload',
 
     // Update window - Harness flow
     harnessCheckUpdate: 'Check Harness Update',

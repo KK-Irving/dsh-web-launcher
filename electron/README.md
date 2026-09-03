@@ -6,6 +6,7 @@ Electron-based desktop client for [DeepSeek Harness](https://github.com/deepseek
 
 - **Mixed mode**: automatically starts `pnpm dsh web` backend, or connects to an already-running service
 - **Multi-tab**: Ctrl+T to open new tabs, Ctrl+W to close, Ctrl+R to reload, Ctrl+Tab / Ctrl+Shift+Tab to switch, middle-click to close
+- **Page navigation**: tab-bar back/forward/reload buttons with live enabled states, Alt+Left/Right, mouse side buttons and a right-click context menu — no browser chrome needed
 - **In-client link targeting**: pages can opt a URL into this client's tabbed browser with the `dsh-tab` window feature of `window.open` (used by the WhaleTV workbench plugin's 打开网页 entries) — such URLs always become a client tab instead of the system default browser; unmarked external links keep opening externally
 - **New Tab dashboard**: tray "New Tab" and Ctrl+T open a local start page with an address bar (browse any site in-client), editable bookmarks and live backend status
 - **Theme sync**: changing appearance (light/dark/system) in DSH Settings recolors all New Tab pages *and* the tab bar in real time — also on OS preference change
@@ -107,6 +108,9 @@ The built app includes auto-update support via GitHub Releases (electron-updater
 | `Ctrl+W`                          | Close current tab                                |
 | `Ctrl+R`                          | Reload current tab                               |
 | `Ctrl+Tab` / `Ctrl+Shift+Tab`     | Next / previous tab (wrap-around)                |
+| `Alt+Left` / `Alt+Right`          | Back / forward in the active tab's history       |
+| Mouse side buttons                | Back / forward (Windows app commands)            |
+| Right-click on a page             | Context menu: back / forward / reload (+ password fill) |
 | `F12`                             | Toggle DevTools for the current tab              |
 | Middle-click tab                  | Close that tab                                   |
 

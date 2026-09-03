@@ -30,6 +30,7 @@ pnpm start
 ### Key Features
 
 - **Multi-tab** — Ctrl+T new tab, Ctrl+W close, Ctrl+R reload, Ctrl+Tab / Ctrl+Shift+Tab switch, middle-click close
+- **Page navigation** — tab-bar ◀ ▶ ↻ buttons, Alt+←/→, mouse side buttons, right-click menu with back/forward/reload; button states track history live
 - **New Tab dashboard** — tray 「New Tab」and Ctrl+T open a local start page with an address bar, editable bookmarks and backend status
 - **Theme sync** — switching appearance (light/dark/system) inside DSH recolors every New Tab page and the tab bar live
 - **System tray** — close button minimizes to tray, double-click to restore

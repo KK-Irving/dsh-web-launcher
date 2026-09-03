@@ -26,9 +26,14 @@ contextBridge.exposeInMainWorld('dshDesktop', {
   closeTab: (id) => ipcRenderer.send('tab-close', id),
   activateTab: (id) => ipcRenderer.send('tab-activate', id),
   reloadTab: (id) => ipcRenderer.send('tab-reload', id),
+  tabBack: () => ipcRenderer.send('tab-back'),
+  tabForward: () => ipcRenderer.send('tab-forward'),
   getTabs: () => ipcRenderer.invoke('get-tabs'),
   onTabsUpdated: (callback) => {
     ipcRenderer.on('tabs-updated', (_event, tabs) => callback(tabs))
+  },
+  onNavState: (callback) => {
+    ipcRenderer.on('nav-state', (_event, state) => callback(state))
   },
 
   // ── Theme ──────────────────────────────────────────────────────────────────

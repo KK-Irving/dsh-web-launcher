@@ -597,18 +597,35 @@ function pwMaybeOfferFill(tab) {
 
 function pwBuildContextMenu(tabId) {
   try {
-    if (!store.get('savePasswords', true) || !pwEncryptionAvailable()) return
+    if (!store.get('savePasswords', true) || !pwEncryptionAvailable()) return []
     const tab = tabs.find(tb => tb.id === tabId)
-    if (!tab || typeof tab.url !== 'string') return
+    if (!tab || typeof tab.url !== 'string') return []
     let origin = null
-    try { origin = new URL(tab.url).origin } catch { return }
-    if (!origin || !/^https?:/.test(origin) || origin === `http://${DEFAULT_HOST}:${DEFAULT_PORT}`) return
+    try { origin = new URL(tab.url).origin } catch { return [] }
+    if (!origin || !/^https?:/.test(origin) || origin === `http://${DEFAULT_HOST}:${DEFAULT_PORT}`) return []
     const entries = pwLoad().entries.filter(e => e.origin === origin)
-    if (!entries.length) return
-    const items = entries.map((en) => ({
+    if (!entries.length) return []
+    return entries.map((en) => ({
       label: t('pwFillMenu') + (en.username ? ' — ' + en.username : ''),
       click: () => { pwFillEntries = entries; pwFillTargetId = tabId; pwPerformFill(en.username) }
     }))
+  } catch { return [] }
+}
+
+/** Right-click menu for every remote tab: navigate + password fill. */
+function buildPageContextMenu(tabId) {
+  try {
+    const tab = tabs.find(tb => tb.id === tabId)
+    if (!tab || typeof tab.url !== 'string' || tab.url === 'newtab') return
+    const wc = tab.view && tab.view.webContents
+    if (!wc || wc.isDestroyed()) return
+    const items = [
+      { label: t('ctxBack'), enabled: wc.navigationHistory.canGoBack(), click: () => tabGoBack() },
+      { label: t('ctxForward'), enabled: wc.navigationHistory.canGoForward(), click: () => tabGoForward() },
+      { label: t('ctxReload'), click: () => wc.reload() }
+    ]
+    const pwItems = pwBuildContextMenu(tabId)
+    if (pwItems.length) { items.push({ type: 'separator' }); items.push(...pwItems) }
     Menu.buildFromTemplate(items).popup({ window: mainWindow || undefined })
   } catch { /* diagnostics only */ }
 }
@@ -845,6 +862,13 @@ function createTab(url = WEB_URL) {
       tab.url = navUrl
       persistTabs()
     }
+    pushNavState()
+  })
+  view.webContents.on('did-navigate-in-page', () => pushNavState())
+  // Mouse side buttons (XButton1/2) arrive as app commands on Windows.
+  view.webContents.on('app-command', (_event, cmd) => {
+    if (cmd === 'browser-backward') tabGoBack()
+    else if (cmd === 'browser-forward') tabGoForward()
   })
 
   // Auth-wall recovery: when a DSH tab renders the 401 text, re-mint the
@@ -859,13 +883,13 @@ function createTab(url = WEB_URL) {
     ).then((hit) => { if (hit) autoReauthAfter401() }).catch(() => { /* page gone */ })
   })
 
-  // Password manager: offer saved-credential fill on login pages and a
-  // right-click "fill password" entry for sites with stored entries.
+  // Password manager: offer saved-credential fill on login pages; right-click
+  // opens the page context menu (navigate + password fill).
   view.webContents.on('did-finish-load', () => {
     const tab = tabs.find(tb => tb.id === id)
     if (tab) pwMaybeOfferFill(tab)
   })
-  view.webContents.on('context-menu', () => pwBuildContextMenu(id))
+  view.webContents.on('context-menu', () => buildPageContextMenu(id))
 
   // Watch for DSH theme changes via injected MutationObserver
   view.webContents.on('dom-ready', () => {
@@ -947,6 +971,38 @@ function activateTab(id) {
   // Resize view to fill content area (below tab bar)
   resizeActiveView()
   notifyTabBar()
+  pushNavState()
+}
+
+// ── Tab navigation (back/forward/reload) ─────────────────────────────────────
+// BrowserViews ship no browser chrome: navigation is provided via the tab-bar
+// buttons, Alt+Left/Right, mouse side buttons (Windows app-command) and the
+// page context menu — all funneling into these helpers.
+
+function pushNavState() {
+  if (!mainWindow || mainWindow.isDestroyed()) return
+  const tab = tabs.find(tb => tb.id === activeTabId)
+  let canBack = false
+  let canForward = false
+  if (tab && tab.view && !tab.view.webContents.isDestroyed()) {
+    canBack = tab.view.webContents.navigationHistory.canGoBack()
+    canForward = tab.view.webContents.navigationHistory.canGoForward()
+  }
+  mainWindow.webContents.send('nav-state', { canBack, canForward })
+}
+
+function tabGoBack() {
+  const tab = tabs.find(tb => tb.id === activeTabId)
+  if (!tab || tab.url === 'newtab') return
+  const wc = tab.view.webContents
+  if (!wc.isDestroyed() && wc.navigationHistory.canGoBack()) wc.navigationHistory.goBack()
+}
+
+function tabGoForward() {
+  const tab = tabs.find(tb => tb.id === activeTabId)
+  if (!tab || tab.url === 'newtab') return
+  const wc = tab.view.webContents
+  if (!wc.isDestroyed() && wc.navigationHistory.canGoForward()) wc.navigationHistory.goForward()
 }
 
 function closeTab(id) {
@@ -1415,6 +1471,8 @@ function registerAcceleratorMenu() {
         { label: 'New Tab', accelerator: 'CmdOrCtrl+T', click: () => createTab('newtab') },
         { label: 'Close Tab', accelerator: 'CmdOrCtrl+W', click: () => closeTab(activeTabId) },
         { label: 'Reload Tab', accelerator: 'CmdOrCtrl+R', click: () => { const tab = activeTab(); if (tab && !tab.view.webContents.isDestroyed()) tab.view.webContents.reload() } },
+        { label: 'Navigate Back', accelerator: 'Alt+Left', click: () => tabGoBack() },
+        { label: 'Navigate Forward', accelerator: 'Alt+Right', click: () => tabGoForward() },
         { label: 'Next Tab', accelerator: 'Ctrl+Tab', click: () => cycleActiveTab(1) },
         { label: 'Previous Tab', accelerator: 'Ctrl+Shift+Tab', click: () => cycleActiveTab(-1) },
         { label: 'Toggle Developer Tools', accelerator: 'F12', click: () => { const tab = activeTab(); if (tab && !tab.view.webContents.isDestroyed()) tab.view.webContents.toggleDevTools() } }
@@ -2390,6 +2448,8 @@ function     registerTabIpc() {
     const tab = tabs.find(tb => tb.id === (id || activeTabId))
     if (tab && !tab.view.webContents.isDestroyed()) tab.view.webContents.reload()
   })
+  ipcOn('tab-back', () => tabGoBack())
+  ipcOn('tab-forward', () => tabGoForward())
 
   // Window controls from tab bar
   ipcOn('window-minimize', () => { if (mainWindow) mainWindow.minimize() })

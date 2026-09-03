@@ -117,6 +117,33 @@
     }
     #new-tab-btn:hover { background: var(--hover); color: var(--text); }
 
+    /* Navigation cluster: back / forward / reload for the active tab */
+    #nav-cluster {
+      display: flex;
+      gap: 2px;
+      align-items: center;
+      flex-shrink: 0;
+      -webkit-app-region: no-drag;
+      padding-right: 4px;
+      border-right: 1px solid var(--line);
+      margin-right: 6px;
+    }
+    .nav-btn {
+      width: 26px;
+      height: 26px;
+      border-radius: 6px;
+      background: transparent;
+      border: none;
+      color: var(--text-dim);
+      font-size: 14px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .nav-btn:hover { background: var(--hover); color: var(--text); }
+    .nav-btn.disabled { opacity: 0.35; pointer-events: none; }
+
     #content {
       flex: 1;
       height: calc(100% - 40px);
@@ -126,6 +153,11 @@
 </head>
 <body>
   <div id="tab-bar">
+    <div id="nav-cluster">
+      <button id="nav-back" class="nav-btn disabled" title="后退">&#x2B05;</button>
+      <button id="nav-forward" class="nav-btn disabled" title="前进">&#x27A1;</button>
+      <button id="nav-reload" class="nav-btn" title="刷新">&#x21BB;</button>
+    </div>
     <div id="tabs-container">
       <!-- Lives inside the tab strip so it always follows the last open tab -->
       <button id="new-tab-btn" title="新建标签页">+</button>
@@ -139,14 +171,17 @@
 
     // i18n: titles update based on language config
     const i18n = {
-      zh: { newTab: '新建标签页' },
-      en: { newTab: 'New Tab' }
+      zh: { newTab: '新建标签页', back: '后退', forward: '前进', reload: '刷新当前页' },
+      en: { newTab: 'New Tab', back: 'Back', forward: 'Forward', reload: 'Reload page' }
     }
     // Apply locale from config (async, fallback to zh)
     desktop.getConfig('language').then((lang) => {
       const s = i18n[lang] || i18n.zh
       document.documentElement.lang = lang || 'zh'
       document.getElementById('new-tab-btn').title = s.newTab
+      document.getElementById('nav-back').title = s.back
+      document.getElementById('nav-forward').title = s.forward
+      document.getElementById('nav-reload').title = s.reload
     })
 
     const tabsContainer = document.getElementById('tabs-container')
@@ -196,6 +231,20 @@
     newTabBtn.addEventListener('click', () => {
       desktop.newTab()
     })
+
+    // Navigation cluster — enabled/disabled states follow the active tab's
+    // history via nav-state pushes from the main process.
+    const backBtn = document.getElementById('nav-back')
+    const fwdBtn = document.getElementById('nav-forward')
+    backBtn.addEventListener('click', () => desktop.tabBack())
+    fwdBtn.addEventListener('click', () => desktop.tabForward())
+    document.getElementById('nav-reload').addEventListener('click', () => desktop.reloadTab())
+    if (desktop.onNavState) {
+      desktop.onNavState(({ canBack, canForward }) => {
+        backBtn.classList.toggle('disabled', !canBack)
+        fwdBtn.classList.toggle('disabled', !canForward)
+      })
+    }
 
     // Keyboard shortcuts (Ctrl+T/W/R, F12) are registered as hidden app-menu
     // accelerators in the main process so they work while BrowserViews hold
