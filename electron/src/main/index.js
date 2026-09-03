@@ -253,17 +253,56 @@ function ensureWebAuthCookie(timeoutMs = 12000) {
   if (webAuthMinting) return webAuthMinting
   webAuthMinting = new Promise((resolve) => {
     const started = Date.now()
+    let lastProbe = 0
     const poll = () => {
       if (webAuthTokenUrl) {
         mintWebAuthCookie(webAuthTokenUrl).then(resolve)
         return
       }
-      if (Date.now() - started > timeoutMs || !backendProcess) { resolve(); return }
-      setTimeout(poll, 250)
+      // No token (yet, or ever — pre-auth harness builds): if the session
+      // cookie already authenticates, or the server has no auth wall at all,
+      // don't stall the caller for the whole timeout.
+      const now = Date.now()
+      if (now - lastProbe >= 1000) {
+        lastProbe = now
+        probeWebAuthOk().then((ok) => {
+          if (ok) { resolve(); return }
+          if (now - started > timeoutMs || !backendProcess) resolve()
+          else setTimeout(poll, 250)
+        })
+        return
+      }
+      if (now - started > timeoutMs || !backendProcess) resolve()
+      else setTimeout(poll, 250)
     }
     poll()
   }).finally(() => { webAuthMinting = null })
   return webAuthMinting
+}
+
+// Seamless recovery when a DSH tab renders the auth wall: with our own
+// long-lived backend the captured token is still valid, so re-mint quietly.
+// Guarded against loops (30s between attempts) and, for adopted external
+// services (no token), throttles the guidance dialog to once per minute.
+let webAuthLastRemintAt = 0
+let webAuthReauthPromptAt = 0
+
+function autoReauthAfter401() {
+  const now = Date.now()
+  if (now - webAuthLastRemintAt < 30000) return
+  if (webAuthTokenUrl) {
+    webAuthLastRemintAt = now
+    journal('tab rendered the auth wall - re-minting cookie from captured token')
+    ensureWebAuthCookie()
+  } else if (now - webAuthReauthPromptAt > 60000) {
+    webAuthReauthPromptAt = now
+    journal('auth wall on an external service - showing guidance dialog')
+    dialog.showMessageBox(mainWindow || undefined, {
+      type: 'warning',
+      title: t('webAuthRequiredTitle'),
+      message: t('webAuthRequiredMsg')
+    })
+  }
 }
 
 function mintWebAuthCookie(authUrl) {
@@ -282,9 +321,12 @@ function mintWebAuthCookie(authUrl) {
       if (minted) reloadDshTabs()
       resolve()
     }
-    // did-finish-load on the final '/' (after the 303 + Set-Cookie) means minted
+    // did-finish-load on the final '/' (after the 303 + Set-Cookie) means minted.
+    // Compare origins exactly — a prefix match would accept lookalike hosts.
     win.webContents.on('did-finish-load', () => {
-      if ((win.webContents.getURL() || '').startsWith(WEB_URL)) finish(true)
+      let sameOrigin = false
+      try { sameOrigin = new URL(win.webContents.getURL() || 'about:blank').origin === WEB_URL } catch { /* bad URL */ }
+      if (sameOrigin) finish(true)
     })
     win.webContents.on('did-fail-load', () => finish(false))
     win.loadURL(authUrl).catch(() => finish(false))
@@ -478,6 +520,18 @@ function createTab(url = WEB_URL) {
     }
   })
 
+  // Auth-wall recovery: when a DSH tab renders the 401 text, re-mint the
+  // session cookie from the still-valid captured token (or guide the user
+  // for adopted services) instead of leaving them stuck on the wall.
+  view.webContents.on('did-finish-load', () => {
+    const tab = tabs.find(tb => tb.id === id)
+    if (!tab || typeof tab.url !== 'string' || !tab.url.startsWith(WEB_URL)) return
+    if (webAuthMinting) return
+    view.webContents.executeJavaScript(
+      'document.body ? document.body.innerText.indexOf("authentication required") !== -1 : false', true
+    ).then((hit) => { if (hit) autoReauthAfter401() }).catch(() => { /* page gone */ })
+  })
+
   // Watch for DSH theme changes via injected MutationObserver
   view.webContents.on('dom-ready', () => {
     // DSH applies themes by writing html.style.colorScheme and toggling
@@ -512,8 +566,15 @@ function createTab(url = WEB_URL) {
     `).catch(() => {})
   })
 
-  // Open external links in system browser
-  view.webContents.setWindowOpenHandler(({ url: linkUrl }) => {
+  // Open external links in system browser. A page can opt a URL into this
+  // client's tabbed browser with the 'dsh-tab' window feature (used by the
+  // WhaleTV workbench plugin's 打开网页 entries): those always become a
+  // client tab so browsing stays inside the desktop app.
+  view.webContents.setWindowOpenHandler(({ url: linkUrl, features = '' }) => {
+    if (features.split(',').includes('dsh-tab')) {
+      createTab(linkUrl)
+      return { action: 'deny' }
+    }
     if (linkUrl.startsWith('http') && !linkUrl.startsWith(WEB_URL)) {
       shell.openExternal(linkUrl)
       return { action: 'deny' }
@@ -730,7 +791,10 @@ function clientUpdWinOpen() {
   return !!(clientUpdWindow && !clientUpdWindow.isDestroyed())
 }
 
+let lastClientUIPayload = null
+
 function sendClientUI(data) {
+  lastClientUIPayload = { ...data }
   if (!clientUpdWinOpen()) return
   clientUpdWindow.webContents.send('client-update-ui', {
     ...data, lang: t.lang, theme: currentResolvedTheme()
@@ -741,6 +805,7 @@ function closeClientUpdateWindow() {
   if (clientUpdWindow && !clientUpdWindow.isDestroyed()) clientUpdWindow.close()
   clientUpdWindow = null
   clientUpdFoundVersion = null
+  lastClientUIPayload = null
 }
 
 /**
@@ -959,8 +1024,18 @@ function journal(msg) {
   try {
     const dir = startupLogDir()
     require('fs').mkdirSync(dir, { recursive: true })
+    const file = require('path').join(dir, 'startup-crash.log')
+    // Crude rotation: keep the last 128KB once the file passes 512KB so a
+    // long-lived install cannot grow it without bound.
+    try {
+      const st = require('fs').statSync(file)
+      if (st.size > 512 * 1024) {
+        const tail = require('fs').readFileSync(file).slice(-128 * 1024)
+        require('fs').writeFileSync(file, '[older entries truncated]\n' + tail)
+      }
+    } catch { /* missing file is fine */ }
     require('fs').appendFileSync(
-      require('path').join(dir, 'startup-crash.log'),
+      file,
       `[${new Date().toISOString()}] ${msg}\n`
     )
   } catch { /* never let diagnostics break the app */ }
@@ -1598,9 +1673,13 @@ async function checkHarnessUpdate() {
 // ── Update Progress Window ───────────────────────────────────────────────────
 
 let updateWindow = null
+// Replay cache: the window's loadFile is async, so the first events (notably
+// the dynamic step list) can arrive before the renderer starts listening.
+let updateProgressSnapshot = null
 
 function createUpdateWindow() {
   if (updateWindow && !updateWindow.isDestroyed()) return
+  updateProgressSnapshot = null // fresh flow, fresh replay cache
   updateWindow = new BrowserWindow({
     width: 560,
     height: 480,
@@ -1628,6 +1707,14 @@ function currentResolvedTheme() {
 }
 
 function sendUpdateProgress(data) {
+  if (updateProgressSnapshot === null) updateProgressSnapshot = {}
+  if (data.title !== undefined) updateProgressSnapshot.title = data.title
+  if (data.subtitle !== undefined) updateProgressSnapshot.subtitle = data.subtitle
+  if (data.steps !== undefined) updateProgressSnapshot.steps = data.steps
+  if (data.step !== undefined) {
+    updateProgressSnapshot.step = data.step
+    updateProgressSnapshot.state = data.state
+  }
   if (updateWindow && !updateWindow.isDestroyed()) {
     updateWindow.webContents.send('update-progress', { ...data, lang: t.lang, theme: currentResolvedTheme() })
   }
@@ -1645,8 +1732,22 @@ ipcMain.on('close-update-window', (event) => {
   closeUpdateWindow()
 })
 
+ipcOn('update-progress-ready', (event) => {
+  if (!isTrustedSender(event)) return
+  if (updateProgressSnapshot && updateWindow && !updateWindow.isDestroyed()) {
+    updateWindow.webContents.send('update-progress', {
+      ...updateProgressSnapshot, lang: t.lang, theme: currentResolvedTheme()
+    })
+  }
+})
+
 ipcOn('client-update-action', (event, payload) => {
   handleClientUpdateAction(payload)
+})
+
+ipcOn('client-update-ready', (event) => {
+  if (!isTrustedSender(event)) return
+  if (lastClientUIPayload) sendClientUI(lastClientUIPayload)
 })
 
 async function updateHarness(onProgress) {

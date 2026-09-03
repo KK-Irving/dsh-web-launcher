@@ -162,6 +162,10 @@
     document.getElementById('closeBtn').addEventListener('click', () => {
       ipcRenderer.send('close-update-window');
     });
+
+    // Tell the main process this page is listening, so it can replay anything
+    // sent before the renderer was ready (notably the dynamic step list).
+    ipcRenderer.send('update-progress-ready');
   </script>
 </body>
 </html>

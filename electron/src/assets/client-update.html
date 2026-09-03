@@ -227,6 +227,10 @@
       document.getElementById('bar').style.width = '0%';
       [1, 2, 3].forEach(n => setStep(n, 'pending'));
     }
+
+    // Announce readiness so the main process can replay any phase sent before
+    // this page finished loading (the window opens and events fire in parallel).
+    ipcRenderer.send('client-update-ready');
   </script>
 </body>
 </html>
