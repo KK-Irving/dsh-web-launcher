@@ -633,44 +633,56 @@ function buildPageContextMenu(tabId) {
 
 function registerPasswordIpc() {
   ipcHandle('pw-supported', () => pwEncryptionAvailable())
-  ipcHandle('pw-get-for-origin', (event, origin) => {
-    if (typeof origin !== 'string' || !pwOriginAllowed(event, origin)) return []
+
+  // NOTE: the public password channels are intentionally registered on the RAW
+  // ipcMain — the ipcOn/ipcHandle wrappers enforce the trusted-sender policy
+  // (local pages + harness origin only), which would reject exactly the web
+  // pages these channels serve. Scope is enforced instead by pwOriginAllowed:
+  // a web frame may only touch credentials under its own origin, local
+  // (file://) pages may manage everything. Nothing here trusts the payload.
+  ipcMain.handle('pw-get-for-origin', (event, origin) => {
+    if (typeof origin !== 'string' || !/^https?:\/\//.test(origin)) return []
+    if (!pwOriginAllowed(event, origin)) return []
     return pwLoad().entries.filter(e => e.origin === origin).map(e => ({ id: e.id, username: e.username }))
   })
-  ipcHandle('pw-reveal', (event, id) => {
+  ipcMain.handle('pw-reveal', (event, id) => {
     const entry = pwLoad().entries.find(e => e.id === id)
     if (!entry || !pwOriginAllowed(event, entry.origin)) return null
     const password = pwDecryptEntry(entry)
     return password === null ? null : { id: entry.id, origin: entry.origin, username: entry.username, password }
   })
-  ipcHandle('pw-list', (event) => {
+  ipcMain.handle('pw-list', (event) => {
     if (senderOrigin(event) !== 'file://') return []
     return pwLoad().entries.map(e => ({ id: e.id, origin: e.origin, username: e.username, updatedAt: e.updatedAt }))
   })
-  ipcHandle('pw-delete', (event, id) => {
+  ipcMain.handle('pw-delete', (event, id) => {
     if (senderOrigin(event) !== 'file://') return { ok: false }
     const db = pwLoad()
     const i = db.entries.findIndex(e => e.id === id)
     if (i >= 0) { db.entries.splice(i, 1); pwPersist() }
     return { ok: true }
   })
-  ipcOn('pw-save', (event, data) => {
+  ipcMain.on('pw-save', (event, data) => {
     const { origin, username, password } = data || {}
-    if (typeof origin !== 'string' || typeof password !== 'string' || !password) return
+    if (typeof origin !== 'string' || !/^https?:\/\//.test(origin)) return
+    if (typeof password !== 'string' || !password) return
     if (!pwOriginAllowed(event, origin)) return
     const r = pwUpsert(origin, username, password)
     journal('password vault save ok=' + r.ok)
   })
-  ipcOn('pw-never', (event, origin) => {
-    if (typeof origin !== 'string' || !pwOriginAllowed(event, origin)) return
+  ipcMain.on('pw-never', (event, origin) => {
+    if (typeof origin !== 'string' || !/^https?:\/\//.test(origin)) return
+    if (!pwOriginAllowed(event, origin)) return
     const db = pwLoad()
     if (!db.neverSaveOrigins.includes(origin)) { db.neverSaveOrigins.push(origin); pwPersist() }
   })
-  ipcOn('pw-capture-candidate', (event, data) => pwHandleCapture(event, data))
-  ipcOn('pw-heuristics-ready', (event, data) => {
+  ipcMain.on('pw-capture-candidate', (event, data) => pwHandleCapture(event, data))
+  ipcMain.on('pw-heuristics-ready', (event, data) => {
     const origin = data && typeof data.origin === 'string' ? data.origin : '?'
     journal('pw heuristics attached: ' + origin)
   })
+
+  // The bar window is a local file:// page — trusted wrapper is fine here.
   ipcOn('pw-bar-action', (event, payload) => {
     const a = payload && payload.action
     if (a === 'save-confirm' && pwPendingCandidate) {
