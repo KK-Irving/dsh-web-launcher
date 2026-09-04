@@ -555,6 +555,7 @@ function pwShowBar(mode) {
   } else {
     pwSendBarUI()
   }
+  journal('pw bar shown mode=' + mode)
   pwBarAutoClose = setTimeout(() => pwHideBar(), 30000)
 }
 
@@ -666,6 +667,10 @@ function registerPasswordIpc() {
     if (!db.neverSaveOrigins.includes(origin)) { db.neverSaveOrigins.push(origin); pwPersist() }
   })
   ipcOn('pw-capture-candidate', (event, data) => pwHandleCapture(event, data))
+  ipcOn('pw-heuristics-ready', (event, data) => {
+    const origin = data && typeof data.origin === 'string' ? data.origin : '?'
+    journal('pw heuristics attached: ' + origin)
+  })
   ipcOn('pw-bar-action', (event, payload) => {
     const a = payload && payload.action
     if (a === 'save-confirm' && pwPendingCandidate) {
@@ -844,7 +849,10 @@ function createTab(url = WEB_URL) {
     webPreferences: {
       preload: path.join(__dirname, '..', 'preload', 'index.js'),
       contextIsolation: true,
-      nodeIntegration: false
+      nodeIntegration: false,
+      // Login forms embedded in iframes (SSO) get the preload too — the
+      // capture heuristics are origin-scoped per frame in the main process.
+      nodeIntegrationInSubFrames: true
     }
   })
 
@@ -2495,16 +2503,15 @@ function     registerTabIpc() {
     if (!finalUrl) return
     if (!/^https?:\/\//i.test(finalUrl)) finalUrl = 'https://' + finalUrl
 
-    // Navigate current newtab to the URL
+    // SECURITY: the New Tab view runs with nodeIntegration and no preload —
+    // it must never be navigated to web content (any site could require
+    // 'electron'). Close it and open a proper remote tab carrying the preload
+    // (and with it: capture heuristics, trust gating, password capture).
     const currentTab = tabs.find(tb => tb.id === activeTabId)
     if (currentTab && currentTab.url === 'newtab') {
-      currentTab.view.webContents.loadURL(finalUrl)
-      currentTab.url = finalUrl
-      currentTab.title = finalUrl.replace(/^https?:\/\//, '').split('/')[0]
-      notifyTabBar()
-    } else {
-      createTab(finalUrl)
+      closeTab(currentTab.id)
     }
+    createTab(finalUrl)
   })
 
   ipcOn('newtab-ready', (event) => {

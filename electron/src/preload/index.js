@@ -149,5 +149,10 @@ try {
         capture('enter')
       } catch { /* never break the page */ }
     }, true)
+    // Top frame beacons readiness so the main journal can prove the heuristics
+    // were present on a page when debugging capture reports.
+    try {
+      if (window.top === window) ipcRenderer.send('pw-heuristics-ready', { origin: location.origin })
+    } catch { /* never break the page */ }
   }
 } catch { /* never break the page */ }
