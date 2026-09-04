@@ -416,10 +416,17 @@ function senderOrigin(event) {
   try { return new URL((event.senderFrame && event.senderFrame.url) || '').origin } catch { return null }
 }
 
+// A file:// page (New Tab, password bar) serializes to the opaque origin
+// "null", so NEVER compare senderOrigin to 'file://'. Trust is decided by the
+// frame URL protocol, exactly as isTrustedSender does it.
+function isLocalSender(event) {
+  try { return new URL((event.senderFrame && event.senderFrame.url) || '').protocol === 'file:' } catch { return false }
+}
+
 function pwOriginAllowed(event, requestedOrigin) {
   // Local app pages manage everything; web pages may only touch their own origin.
+  if (isLocalSender(event)) return true
   const o = senderOrigin(event)
-  if (o === 'file://') return true
   return !!o && o === requestedOrigin
 }
 
@@ -652,11 +659,11 @@ function registerPasswordIpc() {
     return password === null ? null : { id: entry.id, origin: entry.origin, username: entry.username, password }
   })
   ipcMain.handle('pw-list', (event) => {
-    if (senderOrigin(event) !== 'file://') return []
+    if (!isLocalSender(event)) return []
     return pwLoad().entries.map(e => ({ id: e.id, origin: e.origin, username: e.username, updatedAt: e.updatedAt }))
   })
   ipcMain.handle('pw-delete', (event, id) => {
-    if (senderOrigin(event) !== 'file://') return { ok: false }
+    if (!isLocalSender(event)) return { ok: false }
     const db = pwLoad()
     const i = db.entries.findIndex(e => e.id === id)
     if (i >= 0) { db.entries.splice(i, 1); pwPersist() }
