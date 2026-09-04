@@ -479,9 +479,16 @@ function pwHandleCapture(event, data) {
   if (!pwOriginAllowed(event, origin)) { journal('pw capture skipped: origin mismatch'); return }
   const db = pwLoad()
   if (db.neverSaveOrigins.includes(origin)) { journal('pw capture skipped: never-save origin'); return }
+  const username = String(data.username || '')
+  // Already stored, unchanged? Then filling-and-submitting must not re-prompt.
+  // Only a new account or an actually-changed password is worth confirming.
+  const existing = db.entries.find(e => e.origin === origin && e.username === username)
+  if (existing && pwDecryptEntry(existing) === password) {
+    journal('pw capture skipped: unchanged credential already stored'); return
+  }
   const now = Date.now()
   if (pwPendingCandidate && now - pwPendingCandidate.at < 3000
-    && pwPendingCandidate.origin === origin && pwPendingCandidate.username === (data.username || '')) {
+    && pwPendingCandidate.origin === origin && pwPendingCandidate.username === username) {
     journal('pw capture skipped: duplicate'); return
   }
   pwPendingCandidate = { origin, username: String(data.username || ''), password, at: now }
